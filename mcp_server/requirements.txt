@@ -1,0 +1,14 @@
+fastapi
+uvicorn[standard]
+pandas
+requests
+yfinance
+feedparser
+psycopg2-binary
+sqlalchemy
+python-dotenv
+scikit-learn
+prophet
+xgboost
+lightgbm
+catboost

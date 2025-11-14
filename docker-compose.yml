@@ -1,0 +1,56 @@
+version: "3.9"
+
+services:
+  db:
+    image: postgres:15
+    container_name: db_finanzas
+    environment:
+      POSTGRES_USER: finanzas
+      POSTGRES_PASSWORD: finanzas_pass
+      POSTGRES_DB: indices
+    volumes:
+      - ./data/db:/var/lib/postgresql/data
+      - ./db-init:/docker-entrypoint-initdb.d
+    ports:
+      - "5432:5432"
+
+  n8n:
+    image: n8nio/n8n:latest
+    container_name: n8n
+    environment:
+      - N8N_BASIC_AUTH_ACTIVE=true
+      - N8N_BASIC_AUTH_USER=admin
+      - N8N_BASIC_AUTH_PASSWORD=admin123
+      - DB_TYPE=postgresdb
+      - DB_POSTGRESDB_HOST=db
+      - DB_POSTGRESDB_DATABASE=indices
+      - DB_POSTGRESDB_USER=finanzas
+      - DB_POSTGRESDB_PASSWORD=finanzas_pass
+      - GENERIC_TIMEZONE=Europe/Madrid
+    ports:
+      - "5678:5678"
+    depends_on:
+      - db
+    volumes:
+      - ./n8n:/home/node/.n8n
+
+  mcp:
+    build: ./mcp_server
+    container_name: mcp_server
+    environment:
+      - DB_HOST=db
+      - DB_PORT=5432
+      - DB_NAME=indices
+      - DB_USER=finanzas
+      - DB_PASS=finanzas_pass
+      - SMTP_HOST=smtp.example.com
+      - SMTP_PORT=587
+      - SMTP_USER=tu@correo.com
+      - SMTP_PASS=tu_smtp_password
+    ports:
+      - "8000:8000"
+    depends_on:
+      - db
+    volumes:
+      - ./mcp_server:/app
+      - ./data:/app/data   
