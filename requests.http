@@ -11,3 +11,6 @@ http://localhost:8000/predecir_ensemble?symbol=%5EIBEX&days=90
 Obtener últimas noticias (últimos 7 días):
 
 http://localhost:8000/noticias?q=IBEX+35+OR+Bolsa+de+Madrid&when=7d
+
+
+http://localhost:8000/docs

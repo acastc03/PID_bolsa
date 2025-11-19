@@ -1,8 +1,16 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
+
+from scripts.assets import Market, resolve_symbol
 
 from scripts.fetch_data import update_prices_for_symbol
-from scripts.news import update_news_for_symbols
+
+from scripts.news import (
+    fetch_and_store_news_rss,
+    fetch_and_store_news_yf,
+    update_news_for_symbols,
+)
 from scripts.indicators import compute_indicators_for_symbol
+
 from scripts.models import (
     compute_signals_for_symbol,
     predict_simple,
@@ -29,9 +37,18 @@ def health():
 
 
 @app.get("/update_prices")
-def update_prices(symbol: str = "^IBEX", period: str = "2y"):
+def update_prices(market: Market = Market.ibex35, period: str = "1mo"):
+    """
+    Actualiza precios históricos para el índice seleccionado (IBEX35, SP500, NASDAQ, NIKKEI).
+    """
+    try:
+        symbol = resolve_symbol(market.value)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
     rows = update_prices_for_symbol(symbol, period)
     return {
+        "market": market.value,
         "symbol": symbol,
         "period": period,
         "rows_inserted_or_updated": rows,
@@ -39,42 +56,62 @@ def update_prices(symbol: str = "^IBEX", period: str = "2y"):
 
 
 @app.get("/update_news")
-def update_news(symbols: str = "^IBEX,^GSPC"):
+def update_news(
+    markets: str = "IBEX35,SP500",
+    when: str = "7d",
+    days: int = 7,
+    limit_rss: int = 10,
+    limit_yf: int = 10,
+):
     """
-    Descarga noticias recientes para una lista de símbolos separada por comas
-    y las guarda en la BD.
+    Descarga noticias para una lista de índices separados por comas
+    (ej: IBEX35,SP500,NASDAQ) y las guarda en la tabla 'news'.
     """
-    symbols_list = [s.strip() for s in symbols.split(",") if s.strip()]
-    inserted = update_news_for_symbols(symbols_list)
-    return {
-        "symbols": symbols_list,
-        "news_inserted": inserted,
-    }
+    market_list = [m.strip() for m in markets.split(",") if m.strip()]
 
+    # convertimos cada market a símbolo real
+    symbols = []
+    for m in market_list:
+        try:
+            symbols.append(resolve_symbol(m))
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+
+    result = update_news_for_symbols(
+        symbols,
+        when=when,
+        days_back=days,
+        max_items_rss=limit_rss,
+        max_items_yf=limit_yf,
+    )
+
+    return {
+        "markets": market_list,
+        "symbols": symbols,
+        "total_news_inserted": result["total"],
+        "details": result["per_symbol"],
+    }
 
 @app.get("/compute_indicators")
-def compute_indicators(symbol: str = "^IBEX"):
-    """
-    Calcula indicadores técnicos (SMA20, SMA50, vol_20, RSI14)
-    a partir de la tabla 'prices' y los guarda en 'indicators'.
-    Pensado para ser llamado desde n8n después de /update_prices.
-    """
+def compute_indicators(market: Market = Market.ibex35):
+    try:
+        symbol = resolve_symbol(market.value)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
     rows = compute_indicators_for_symbol(symbol)
-    return {
-        "symbol": symbol,
-        "rows_updated": rows,
-    }
+    return {"market": market.value, "symbol": symbol, "rows_updated": rows}
 
 
 @app.get("/compute_signals")
-def compute_signals(symbol: str = "^IBEX"):
-    """
-    Calcula señales de trading basadas en reglas (o modelos ML),
-    las guarda en la tabla 'signals' y devuelve la última señal.
-    Pensado para ser llamado desde n8n después de /compute_indicators.
-    """
+def compute_signals(market: Market = Market.ibex35):
+    try:
+        symbol = resolve_symbol(market.value)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
     result = compute_signals_for_symbol(symbol)
-    return result
+    return {"market": market.value, "symbol": symbol, **result}
 
 
 @app.get("/predecir_simple")
@@ -103,17 +140,15 @@ def predecir_ensemble(symbol: str = "^IBEX"):
 
 
 @app.get("/daily_summary")
-def daily_summary(symbol: str = "^IBEX"):
-    """
-    Devuelve un resumen diario con:
-      - último precio y variación
-      - señales simple y ensemble
-      - indicadores técnicos principales
-      - noticias recientes
-      - texto listo para enviar por email
-    Pensado para que n8n lo consuma directamente.
-    """
+def daily_summary(market: Market = Market.ibex35):
+    try:
+        symbol = resolve_symbol(market.value)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
     summary = build_daily_summary(symbol)
+    # añadimos info del market original
+    summary["market"] = market.value
     return summary
 
 
