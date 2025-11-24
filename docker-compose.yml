@@ -50,3 +50,12 @@ services:
     volumes:
       - ./mcp_server:/app
       - ./data:/app/data
+
+  adminer:
+    image: adminer
+    container_name: pid_bolsa_adminer
+    restart: always
+    depends_on:
+      - db
+    ports:
+      - "8081:8080"
