@@ -1,4 +1,12 @@
 # mcp_server/scripts/news.py
+"""Módulo de descarga y almacenamiento de noticias financieras.
+
+Integra dos fuentes de noticias:
+1. Google News RSS: Búsqueda flexible con queries
+2. Yahoo Finance API: Noticias específicas por símbolo
+
+Todas las noticias se guardan en la tabla 'news' con deduplicación por URL.
+"""
 
 from datetime import datetime, timedelta, timezone
 from typing import List, Dict, Any, Optional
@@ -15,9 +23,25 @@ from . import logger
 # ------------------------
 
 def fetch_news_rss(q: str = "IBEX 35 OR Bolsa de Madrid", when: str = "7d") -> List[Dict[str, Any]]:
-    """
-    Descarga noticias desde Google News RSS usando una query libre (q)
-    y un filtro when:7d, when:1d, when:30d, etc.
+    """Descarga noticias desde Google News RSS.
+    
+    Utiliza el servicio RSS de Google News con búsqueda personalizada.
+    Útil para noticias generales del mercado o keywords específicas.
+    
+    Args:
+        q: Query de búsqueda. Soporta operadores OR, AND, comillas
+           Ejemplo: "IBEX 35 OR Bolsa de Madrid"
+        when: Ventana temporal. Opciones: "1d", "7d", "30d"
+        
+    Returns:
+        List[Dict]: Lista de noticias con campos:
+                   - title: Título
+                   - link: URL
+                   - published: datetime
+                   - source: Fuente
+                   
+    Note:
+        Google News RSS no incluye resumen (summary) útil
     """
     q_enc = q.replace(" ", "+")
     url = f"https://news.google.com/rss/search?q={q_enc}+when:{when}&hl=es&gl=ES&ceid=ES:es"
@@ -54,13 +78,25 @@ def fetch_and_store_news_rss(
     when: str = "7d",
     max_items: int = 10,
 ) -> int:
-    """
-    Usa Google News RSS (feedparser) para buscar noticias sobre 'q'
-    (por defecto algo relacionado con el símbolo) y las guarda en la tabla 'news'.
-
-    - symbol: se guarda en la columna symbol de la tabla (ej. '^IBEX')
-    - q: query libre para Google News (si es None, se genera a partir del símbolo)
-    - when: '7d', '1d', '30d', etc.
+    """Descarga noticias desde Google News RSS y las guarda en BD.
+    
+    Workflow:
+    1. Genera query de búsqueda (o usa la proporcionada)
+    2. Descarga noticias vía RSS
+    3. Guarda en tabla 'news' con deduplicación por URL
+    
+    Args:
+        symbol: Símbolo a asociar con las noticias (ej: "^IBEX")
+        q: Query personalizada. Si None, genera automáticamente
+        when: Ventana temporal ("1d", "7d", "30d")
+        max_items: Máximo de noticias a guardar
+        
+    Returns:
+        int: Número de noticias insertadas/actualizadas
+        
+    Note:
+        - Usa ON CONFLICT(url) para evitar duplicados
+        - Sentiment se deja como None (placeholder para futuro)
     """
     if q is None:
         q = f"{symbol} OR IBEX 35 OR Bolsa de Madrid"
@@ -120,9 +156,23 @@ def fetch_and_store_news_yf(
     days_back: int = 7,
     max_items: int = 10,
 ) -> int:
-    """
-    Descarga noticias usando yfinance.Ticker(symbol).news,
-    filtra por fecha y las guarda en la tabla 'news'.
+    """Descarga noticias desde Yahoo Finance API y las guarda en BD.
+    
+    Utiliza la API oficial de yfinance para obtener noticias
+    específicas del símbolo. Generalmente más relevantes que RSS.
+    
+    Args:
+        symbol: Símbolo de Yahoo Finance (ej: "^IBEX")
+        days_back: Número de días hacia atrás para filtrar
+        max_items: Límite de noticias a guardar
+        
+    Returns:
+        int: Número de noticias insertadas/actualizadas
+        
+    Note:
+        - Yahoo Finance incluye summary (resumen)
+        - Usa timestamp Unix (providerPublishTime)
+        - Deduplica por URL automáticamente
     """
     logger.info(f"Descargando noticias (yfinance) para {symbol} (últimos {days_back} días)...")
     ticker = yf.Ticker(symbol)
@@ -203,13 +253,30 @@ def update_news_for_symbols(
     max_items_rss: int = 10,
     max_items_yf: int = 10,
 ):
-    """
-    Para cada símbolo:
-      - Trae noticias de Google News RSS (fetch_and_store_news_rss)
-      - Trae noticias de yfinance (fetch_and_store_news_yf)
-    y las guarda en la tabla 'news'.
-
-    Devuelve un diccionario con el total global y el detalle por símbolo.
+    """Descarga noticias de múltiples fuentes para varios símbolos.
+    
+    Estrategia dual:
+    - RSS de Google News: Cobertura amplia, contexto general
+    - yfinance API: Noticias específicas, mayor relevancia
+    
+    Args:
+        symbols: Lista de símbolos (ej: ["^IBEX", "^GSPC"])
+        when: Ventana para RSS ("1d", "7d", "30d")
+        days_back: Días hacia atrás para yfinance
+        max_items_rss: Límite por símbolo vía RSS
+        max_items_yf: Límite por símbolo vía yfinance
+        
+    Returns:
+        dict: {
+            "total": int,  # Total de noticias
+            "per_symbol": {  # Detalle por símbolo
+                "^IBEX": {"rss": 5, "yfinance": 8, "total": 13},
+                ...
+            }
+        }
+        
+    Note:
+        Ambas fuentes se complementan para máxima cobertura
     """
     per_symbol: dict[str, dict] = {}
     total = 0
