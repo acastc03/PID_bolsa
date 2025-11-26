@@ -1,20 +1,31 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Query
 
 from scripts.assets import Market, resolve_symbol
 
+from scripts.save_predictions import save_daily_predictions
+
 from scripts.fetch_data import update_prices_for_symbol
+
 from scripts.news import (
     fetch_and_store_news_rss,
     fetch_and_store_news_yf,
     update_news_for_symbols,
 )
 from scripts.indicators import compute_indicators_for_symbol
+
 from scripts.models import (
     compute_signals_for_symbol,
     predict_simple,
     predict_ensemble,
 )
+
+from scripts.validate_predictions import (
+    validate_predictions_for_date,
+    validate_predictions_yesterday,
+)
+
 from scripts.reporting import build_daily_summary
+
 from scripts.model_storage import delete_old_models, get_model_info
 
 app = FastAPI(
@@ -23,6 +34,8 @@ app = FastAPI(
     description="API para datos de mercado, noticias y modelos de predicción.",
 )
 
+
+from datetime import date  
 
 # ===================================================================
 # 1. ENDPOINTS DE UTILIDAD Y SALUD
@@ -143,15 +156,109 @@ def predecir_ensemble_endpoint(symbol: str = "^IBEX"):
     """
     Devuelve las señales individuales de cada modelo ML y la señal final
     por votación (ensemble).
-    
-    Usa modelos guardados en caché si existen (rápido).
+
+    Además, guarda las predicciones de cada modelo en la tabla ml_predictions
+    para llevar un histórico diario.
     """
+    # 1) Obtener resultados del ensemble (tal como ya hacías)
     result = predict_ensemble(symbol)
+
+    # 2) Construir el diccionario de predicciones por modelo.
+    #    Aquí asumimos que `result["ml_models"]` es algo tipo:
+    #    [
+    #      {
+    #        "model_name": "LinearRegression",
+    #        "prediction_next_day": 15920.52,
+    #        "signal_next_day": -1,
+    #        ...
+    #      },
+    #      ...
+    #    ]
+    #    y que quieres guardar:
+    #    - prediction_next_day como predicted_value (precio)
+    #    - signal_next_day como predicted_signal (+1, 0, -1)
+    predictions_dict = {}
+    for m in result.get("ml_models", []):
+        model_name = m.get("model_name") or m.get("name")
+        price = m.get("prediction_next_day")
+        signal = m.get("signal_next_day")
+        if model_name is not None:
+            predictions_dict[model_name] = {
+                "price": price,
+                "signal": signal,
+            }
+
+    # 3) También guardamos la señal del ensemble como un "modelo" más
+    #    para poder evaluarlo luego frente al resto.
+    #    Opcionalmente, podemos guardar como precio del ensemble la media
+    #    de los prediction_next_day de los modelos individuales.
+    if "signal_ensemble" in result:
+        prices = [
+            m.get("prediction_next_day")
+            for m in result.get("ml_models", [])
+            if m.get("prediction_next_day") is not None
+        ]
+        avg_price = sum(prices) / len(prices) if prices else None
+
+        predictions_dict["ensemble"] = {
+            "price": avg_price,                  # puede ser None si no quieres guardar precio
+            "signal": result["signal_ensemble"], # señal agregada del ensemble
+        }
+
+    # 4) Definimos fechas: run_date = hoy; prediction_date = hoy+1 (o hoy, según tu lógica).
+    today = date.today()
+    prediction_date = today  # o calcula mañana si tu modelo siempre predice la sesión siguiente
+    run_date = today
+
+    # 5) Guardar en la BD (solo si hay algo que guardar)
+    if predictions_dict:
+        save_daily_predictions(
+            symbol=symbol,
+            prediction_date=prediction_date,
+            run_date=run_date,
+            predictions=predictions_dict,
+        )
+
+    # 6) Devolver la respuesta original
     return {
         "symbol": symbol,
         **result,
     }
 
+# ===================================================================
+# 4.b ENDPOINT DE VALIDACIÓN DE PREDICCIONES
+# ===================================================================
+
+@app.post("/validate_predictions")
+def validate_predictions(
+    date_str: str | None = Query(
+        default=None,
+        description="Fecha a validar en formato YYYY-MM-DD; si se omite, se usa ayer",
+    )
+):
+    """
+    Valida las predicciones guardadas en ml_predictions:
+
+    - Si se pasa date_str (YYYY-MM-DD), usa esa fecha como prediction_date.
+    - Si no se pasa, valida las predicciones de 'ayer'.
+
+    Para cada símbolo con precio real en la tabla prices:
+    - Rellena true_value con el cierre real (prices.close).
+    - Calcula error_abs = |predicted_value - true_value|.
+    """
+    if date_str:
+        try:
+            target_date = datetime.strptime(date_str, "%Y-%m-%d").date()
+        except ValueError:
+            raise HTTPException(
+                status_code=400,
+                detail="Formato de fecha inválido, usa YYYY-MM-DD",
+            )
+        result = validate_predictions_for_date(target_date)
+    else:
+        result = validate_predictions_yesterday()
+
+    return result
 
 # ===================================================================
 # 5. ENDPOINTS DE GESTIÓN DE MODELOS ML
@@ -216,7 +323,6 @@ def daily_summary(market: Market = Market.ibex35):
     # añadimos info del market original
     summary["market"] = market.value
     return summary
-
 
 # ===================================================================
 # 7. ENDPOINTS LEGACY / DEPRECADOS (Mantener por compatibilidad)
