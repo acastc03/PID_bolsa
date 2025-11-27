@@ -1,3 +1,9 @@
+"""Módulo de almacenamiento de predicciones de modelos ML.
+
+Guarda las predicciones diarias de múltiples modelos en la tabla ml_predictions
+para permitir evaluación retrospectiva y comparación de modelos.
+"""
+
 from datetime import date
 from psycopg2 import Error as PsycopgError
 from .config import get_db_conn
@@ -9,26 +15,39 @@ def save_daily_predictions(
     run_date: date,
     predictions: dict,
 ):
-    """
-    Guarda en la tabla ml_predictions las predicciones diarias de varios modelos.
-
-    Parámetro predictions:
-        dict con estructura:
-        {
-            "LinearRegression": {
-                "price": 15920.52,
-                "signal": -1,
-            },
-            "RandomForest": {
-                "price": 15897.88,
-                "signal": -1,
-            },
-            "ensemble": {
-                "price": 15900.00,   # opcional, puedes poner None
-                "signal": -1,
-            },
-            ...
-        }
+    """Guarda predicciones de múltiples modelos ML en la base de datos.
+    
+    Permite almacenar las predicciones de precio y señal de cada modelo
+    para posteriormente validarlas contra los valores reales y medir accuracy.
+    
+    Args:
+        symbol: Símbolo del activo (ej: "^IBEX")
+        prediction_date: Fecha para la que se hace la predicción
+        run_date: Fecha en que se ejecuta el modelo (hoy)
+        predictions: Diccionario con estructura:
+            {
+                "LinearRegression": {
+                    "price": 15920.52,  # Precio predicho
+                    "signal": -1,        # Señal: +1 (compra), 0 (neutral), -1 (venta)
+                },
+                "RandomForest": {
+                    "price": 15897.88,
+                    "signal": -1,
+                },
+                "ensemble": {
+                    "price": 15900.00,   # Opcional, puede ser None
+                    "signal": -1,         # Señal agregada del ensemble
+                },
+                ...
+            }
+            
+    Raises:
+        PsycopgError: Si hay error en la inserción a PostgreSQL
+        
+    Note:
+        - Usa ON CONFLICT para actualizar si ya existe predicción
+        - true_value y error_abs se rellenan después con validate_predictions
+        - Permite comparar rendimiento entre modelos
     """
     conn = None
     try:

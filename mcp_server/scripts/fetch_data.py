@@ -1,4 +1,12 @@
+<<<<<<< HEAD
 # mcp_server/scripts/fetch_data.py
+=======
+"""Módulo de descarga de datos financieros desde Yahoo Finance.
+
+Gestiona la obtención de precios históricos (OHLCV) desde yfinance
+y su almacenamiento en la base de datos PostgreSQL.
+"""
+>>>>>>> 47399a9cc4b6134c4b8a9e8fbec186b6ae9886eb
 
 import yfinance as yf
 import pandas as pd
@@ -9,9 +17,21 @@ from . import logger
 
 
 def _find_col(df: pd.DataFrame, target: str):
-    """
-    Busca una columna en df que coincida exactamente (ignorando mayúsculas)
-    o que contenga el texto target. Devuelve el nombre real o None.
+    """Busca una columna en un DataFrame de manera flexible.
+    
+    Intenta encontrar una columna que coincida con 'target' de dos formas:
+    1. Coincidencia exacta (ignorando mayúsculas/minúsculas)
+    2. Contenga el texto target como substring
+    
+    Esto es útil porque yfinance puede devolver columnas con diferentes
+    formatos dependiendo del contexto (ej: "Close" vs "Close IBEX").
+    
+    Args:
+        df: DataFrame donde buscar
+        target: Nombre de columna a buscar (ej: "Close", "Volume")
+        
+    Returns:
+        str | None: Nombre exacto de la columna encontrada, o None si no existe
     """
     cols = [str(c) for c in df.columns]
 
@@ -29,10 +49,32 @@ def _find_col(df: pd.DataFrame, target: str):
 
 
 def update_prices_for_symbol(symbol: str, period: str = "1mo") -> int:
+    """Descarga precios históricos desde Yahoo Finance y los guarda en BD.
+    
+    Obtiene datos OHLCV (Open, High, Low, Close, Volume) para un símbolo
+    y los inserta/actualiza en la tabla 'prices' usando UPSERT (ON CONFLICT).
+    
+    Args:
+        symbol: Símbolo de Yahoo Finance (ej: "^IBEX", "^GSPC")
+        period: Período de tiempo a descargar. Opciones:
+               - "1d", "5d", "1mo", "3mo", "6mo", "1y", "2y", "5y", "max"
+               
+    Returns:
+        int: Número de filas insertadas/actualizadas en la base de datos
+        
+    Raises:
+        RuntimeError: Si faltan columnas esenciales en los datos descargados
+        PsycopgError: Si hay error al insertar en PostgreSQL
+        
+    Note:
+        - Usa ON CONFLICT para actualizar filas existentes
+        - Maneja columnas MultiIndex automáticamente
+        - Convierte NaN en volumen a 0
+    """
     logger.info(f"Descargando precios de {symbol} ({period})...")
     df = yf.download(symbol, period=period)
 
-    # Aplanar columnas si vienen como MultiIndex
+    # Aplanar columnas si vienen como MultiIndex (ocurre con múltiples símbolos)
     if isinstance(df.columns, pd.MultiIndex):
         df.columns = [
             " ".join([str(c) for c in col if c]).strip()
@@ -41,6 +83,7 @@ def update_prices_for_symbol(symbol: str, period: str = "1mo") -> int:
 
     logger.info(f"Columnas obtenidas de yfinance para {symbol}: {list(df.columns)}")
 
+    # Verificar que se obtuvieron datos
     if df.empty:
         logger.warning(f"No se han obtenido datos para {symbol}")
         return 0
