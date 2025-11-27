@@ -1,13 +1,10 @@
-<<<<<<< HEAD
 # mcp_server/scripts/fetch_data.py
-=======
+
 """Módulo de descarga de datos financieros desde Yahoo Finance.
 
 Gestiona la obtención de precios históricos (OHLCV) desde yfinance
 y su almacenamiento en la base de datos PostgreSQL.
 """
->>>>>>> 47399a9cc4b6134c4b8a9e8fbec186b6ae9886eb
-
 import yfinance as yf
 import pandas as pd
 from psycopg2 import Error as PsycopgError

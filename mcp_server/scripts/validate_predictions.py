@@ -88,11 +88,17 @@ def validate_predictions_for_date(target_date: date):
         }
 
     except PsycopgError as e:
-        # Solo hacemos rollback si la conexión sigue abierta
         if conn is not None and not conn.closed:
             conn.rollback()
         print(f"[validate_predictions_for_date] Error de BD: {e}")
-        raise
+        # ⚠️ En vez de `raise`, devolvemos un error controlado
+        return {
+            "target_date": target_date.isoformat(),
+            "symbols_with_price": [],
+            "rows_updated": 0,
+            "error": "database_error",
+            "message": "Error de base de datos al validar predicciones",
+        }
 
     finally:
         # Cerramos la conexión solo si sigue abierta

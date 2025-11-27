@@ -81,9 +81,7 @@ def fetch_and_store_news_rss(
     when: str = "7d",
     max_items: int = 10,
 ) -> int:
-<<<<<<< HEAD
-    ...
-=======
+
     """Descarga noticias desde Google News RSS y las guarda en BD.
     
     Workflow:
@@ -104,7 +102,7 @@ def fetch_and_store_news_rss(
         - Usa ON CONFLICT(url) para evitar duplicados
         - Sentiment se deja como None (placeholder para futuro)
     """
->>>>>>> 47399a9cc4b6134c4b8a9e8fbec186b6ae9886eb
+
     if q is None:
         q = f"{symbol} OR IBEX 35 OR Bolsa de Madrid"
 

@@ -88,7 +88,6 @@ def _compute_indicators_df(df: pd.DataFrame) -> pd.DataFrame:
     out = pd.DataFrame(index=df.index.copy())
     close = df["Close"]
 
-<<<<<<< HEAD
     returns = close.pct_change()
     out["sma_20"] = close.rolling(window=20, min_periods=20).mean()
     out["sma_50"] = close.rolling(window=50, min_periods=50).mean()
@@ -97,36 +96,10 @@ def _compute_indicators_df(df: pd.DataFrame) -> pd.DataFrame:
     delta = close.diff()
     gain = delta.where(delta > 0, 0.0)
     loss = -delta.where(delta < 0, 0.0)
-=======
-    # Retorno diario (cambio porcentual)
-    returns = close.pct_change()
-
-    # Medias móviles simples (SMA)
-    # Indican la tendencia promedio del precio
-    out["sma_20"] = close.rolling(window=20, min_periods=20).mean()
-    out["sma_50"] = close.rolling(window=50, min_periods=50).mean()
-
-    # Volatilidad 20 días (desviación estándar de retornos)
-    # Mide la variabilidad/riesgo del activo
-    out["vol_20"] = returns.rolling(window=20, min_periods=20).std()
-
-    # RSI 14 (Relative Strength Index - versión Wilder)
-    # Oscilador de momentum: valores 0-100
-    # < 30: sobreventa (posible compra)
-    # > 70: sobrecompra (posible venta)
-    delta = close.diff()  # Cambio absoluto diario
-    gain = delta.where(delta > 0, 0.0)   # Solo ganancias
-    loss = -delta.where(delta < 0, 0.0)  # Solo pérdidas (positivas)
->>>>>>> 47399a9cc4b6134c4b8a9e8fbec186b6ae9886eb
 
     # Promedio de ganancias y pérdidas
     roll_up = gain.rolling(14, min_periods=14).mean()
     roll_down = loss.rolling(14, min_periods=14).mean()
-<<<<<<< HEAD
-=======
-
-    # RS = ratio de fuerza relativa
->>>>>>> 47399a9cc4b6134c4b8a9e8fbec186b6ae9886eb
     rs = roll_up / roll_down
     # RSI normalizado 0-100
     out["rsi_14"] = 100.0 - (100.0 / (1.0 + rs))
@@ -164,7 +137,6 @@ def compute_indicators_for_symbol(symbol: str) -> int:
         logger.warning(f"No se han podido calcular indicadores para {symbol} (muy pocos datos)")
         return 0
 
-<<<<<<< HEAD
     conn = None
     try:
         conn = get_db_conn()
@@ -192,33 +164,6 @@ def compute_indicators_for_symbol(symbol: str) -> int:
         conn.commit()
         logger.info(f"Indicadores calculados/actualizados para {symbol}: {len(ind_df)} filas")
         return len(ind_df)
-=======
-    # Guardar en base de datos usando UPSERT
-    conn = get_db_conn()
-    with conn, conn.cursor() as cur:
-        for date, row in ind_df.iterrows():
-            # ON CONFLICT: si ya existe (symbol, date), actualiza los valores
-            cur.execute(
-                """
-                INSERT INTO indicators (symbol, date, sma_20, sma_50, vol_20, rsi_14)
-                VALUES (%s, %s, %s, %s, %s, %s)
-                ON CONFLICT (symbol, date) DO UPDATE
-                SET sma_20 = EXCLUDED.sma_20,
-                    sma_50 = EXCLUDED.sma_50,
-                    vol_20 = EXCLUDED.vol_20,
-                    rsi_14 = EXCLUDED.rsi_14;
-                """,
-                (
-                    symbol,
-                    date.date(),
-                    # Convertir NaN a None (NULL en SQL)
-                    float(row["sma_20"]) if pd.notna(row["sma_20"]) else None,
-                    float(row["sma_50"]) if pd.notna(row["sma_50"]) else None,
-                    float(row["vol_20"]) if pd.notna(row["vol_20"]) else None,
-                    float(row["rsi_14"]) if pd.notna(row["rsi_14"]) else None,
-                ),
-            )
->>>>>>> 47399a9cc4b6134c4b8a9e8fbec186b6ae9886eb
 
     except PsycopgError as e:
         logger.error(f"Error de Postgres al guardar indicadores de {symbol}: {e}")

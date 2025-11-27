@@ -1,4 +1,6 @@
 from fastapi import FastAPI, HTTPException, Query
+from datetime import datetime
+from psycopg2 import Error as PsycopgError
 
 from scripts.assets import Market, resolve_symbol
 
@@ -237,15 +239,12 @@ def validate_predictions(
     )
 ):
     """
-    Valida las predicciones guardadas en ml_predictions:
+    Valida las predicciones guardadas en ml_predictions.
 
     - Si se pasa date_str (YYYY-MM-DD), usa esa fecha como prediction_date.
     - Si no se pasa, valida las predicciones de 'ayer'.
-
-    Para cada símbolo con precio real en la tabla prices:
-    - Rellena true_value con el cierre real (prices.close).
-    - Calcula error_abs = |predicted_value - true_value|.
     """
+    # 1) Validar formato de fecha (ya lo hacías bien)
     if date_str:
         try:
             target_date = datetime.strptime(date_str, "%Y-%m-%d").date()
@@ -254,10 +253,38 @@ def validate_predictions(
                 status_code=400,
                 detail="Formato de fecha inválido, usa YYYY-MM-DD",
             )
-        result = validate_predictions_for_date(target_date)
+        try:
+            result = validate_predictions_for_date(target_date)
+        except PsycopgError:
+            # Por si en el futuro cambias validate_predictions_for_date
+            raise HTTPException(
+                status_code=500,
+                detail="Error de base de datos al validar predicciones",
+            )
     else:
-        result = validate_predictions_yesterday()
+        try:
+            result = validate_predictions_yesterday()
+        except PsycopgError:
+            raise HTTPException(
+                status_code=500,
+                detail="Error de base de datos al validar predicciones",
+            )
 
+    # 2) Si la función devolvió un error de BD en forma de dict → 500 controlado
+    if result.get("error") == "database_error":
+        raise HTTPException(
+            status_code=500,
+            detail=result.get("message", "Error de base de datos al validar predicciones"),
+        )
+
+    # 3) Si no hay precios para esa fecha → 404 controlado (fecha no disponible)
+    if not result.get("symbols_with_price"):
+        raise HTTPException(
+            status_code=404,
+            detail=result.get("message", "No hay precios en 'prices' para esa fecha"),
+        )
+
+    # 4) Caso OK
     return result
 
 # ===================================================================
