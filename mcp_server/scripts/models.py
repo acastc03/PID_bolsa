@@ -16,34 +16,47 @@ from math import sqrt
 from .config import get_db_conn
 from . import logger
 from .model_storage import save_model, load_model, model_exists
+from psycopg2 import Error as PsycopgError
 
 
 def _load_features(symbol: str) -> pd.DataFrame:
     """
-    Carga precios + indicadores para un símbolo y construye un DataFrame de features
-    indexado por fecha.
+    Carga precios + indicadores para un símbolo y construye un DataFrame
+    de features indexado por fecha.
     """
-    conn = get_db_conn()
-    with conn, conn.cursor() as cur:
-        cur.execute(
-            """
-            SELECT
-                p.date,
-                p.close,
-                i.sma_20,
-                i.sma_50,
-                i.vol_20,
-                i.rsi_14
-            FROM prices p
-            LEFT JOIN indicators i
-              ON p.symbol = i.symbol
-             AND p.date = i.date
-            WHERE p.symbol = %s
-            ORDER BY p.date
-            """,
-            (symbol,),
-        )
-        rows = cur.fetchall()
+    conn = None
+    try:
+        conn = get_db_conn()
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT
+                    p.date,
+                    p.close,
+                    i.sma_20,
+                    i.sma_50,
+                    i.vol_20,
+                    i.rsi_14
+                FROM prices p
+                LEFT JOIN indicators i
+                    ON p.symbol = i.symbol
+                   AND p.date = i.date
+                WHERE p.symbol = %s
+                ORDER BY p.date
+                """,
+                (symbol,),
+            )
+            rows = cur.fetchall()
+        # solo lectura, no hace falta commit
+
+    except PsycopgError as e:
+        logger.error(f"Error de Postgres al cargar features para {symbol}: {e}")
+        if conn is not None and not conn.closed:
+            conn.rollback()
+        raise
+    finally:
+        if conn is not None and not conn.closed:
+            conn.close()
 
     if not rows:
         logger.warning(f"No hay datos de precios/indicadores para {symbol}")
@@ -52,13 +65,12 @@ def _load_features(symbol: str) -> pd.DataFrame:
     df = pd.DataFrame(rows)
     df["date"] = pd.to_datetime(df["date"])
     df.set_index("date", inplace=True)
-    
+
     # Añadir features adicionales para los modelos ML
     df["ema_10"] = df["close"].ewm(span=10, adjust=False).mean()
     df["ema_50"] = df["close"].ewm(span=50, adjust=False).mean()
     df["momentum"] = df["close"].diff(5)
     df["volatility"] = df["close"].rolling(window=20).std()
-    
     return df
 
 
@@ -588,60 +600,65 @@ def compute_signals_for_symbol(symbol: str) -> dict:
             "signal_ensemble": 0,
         }
 
-    conn = get_db_conn()
+    conn = None
     last_simple = 0
     last_ensemble = 0
-    
     logger.info(f"Calculando señales para {len(df)} fechas de {symbol}...")
 
-    with conn, conn.cursor() as cur:
-        for idx, (date, row) in enumerate(df.iterrows()):
-            # Calcular las 3 señales basadas en reglas (muy rápido)
-            s1 = _rule_based_signal(row)
-            s2 = _rule_based_signal_alt(row)
-            s3 = _rule_based_signal_contrarian(row)
-            
-            # Votación simple de las 3 reglas
-            signals = np.array([s1, s2, s3], dtype=int)
-            mean = signals.mean()
-            
-            if mean > 0.2:
-                voted = 1
-            elif mean < -0.2:
-                voted = -1
-            else:
-                voted = 0
+    try:
+        conn = get_db_conn()
+        with conn.cursor() as cur:
+            for idx, (date, row) in enumerate(df.iterrows()):
+                s1 = _rule_based_signal(row)
+                s2 = _rule_based_signal_alt(row)
+                s3 = _rule_based_signal_contrarian(row)
 
-            # Guardar en BD
-            cur.execute(
-                """
-                INSERT INTO signals (symbol, date, signal_simple, signal_ensemble, model_best)
-                VALUES (%s, %s, %s, %s, %s)
-                ON CONFLICT (symbol, date) DO UPDATE
-                  SET signal_simple = EXCLUDED.signal_simple,
-                      signal_ensemble = EXCLUDED.signal_ensemble,
-                      model_best = EXCLUDED.model_best;
-                """,
-                (
-                    symbol,
-                    date.date(),
-                    int(s1),
-                    int(voted),
-                    "rules_ensemble",
-                ),
-            )
+                signals = np.array([s1, s2, s3], dtype=int)
+                mean = signals.mean()
+                if mean > 0.2:
+                    voted = 1
+                elif mean < -0.2:
+                    voted = -1
+                else:
+                    voted = 0
 
-            last_simple = int(s1)
-            last_ensemble = int(voted)
-            
-            # Log cada 100 filas para seguimiento
-            if (idx + 1) % 100 == 0:
-                logger.info(f"Procesadas {idx + 1}/{len(df)} fechas...")
+                cur.execute(
+                    """
+                    INSERT INTO signals (symbol, date, signal_simple, signal_ensemble, model_best)
+                    VALUES (%s, %s, %s, %s, %s)
+                    ON CONFLICT (symbol, date) DO UPDATE
+                    SET signal_simple = EXCLUDED.signal_simple,
+                        signal_ensemble = EXCLUDED.signal_ensemble,
+                        model_best = EXCLUDED.model_best;
+                    """,
+                    (
+                        symbol,
+                        date.date(),
+                        int(s1),
+                        int(voted),
+                        "rules_ensemble",
+                    ),
+                )
 
-    logger.info(
-        f"✅ Señales calculadas para {symbol}: última fecha {df.index[-1].date()}, "
-        f"simple={last_simple}, ensemble={last_ensemble}"
-    )
+                last_simple = int(s1)
+                last_ensemble = int(voted)
+
+                if (idx + 1) % 100 == 0:
+                    logger.info(f"Procesadas {idx + 1}/{len(df)} fechas...")
+
+        conn.commit()
+        logger.info(
+            f"✅ Señales calculadas para {symbol}: última fecha {df.index[-1].date()}, "
+            f"simple={last_simple}, ensemble={last_ensemble}"
+        )
+    except PsycopgError as e:
+        logger.error(f"Error de Postgres al guardar señales de {symbol}: {e}")
+        if conn is not None and not conn.closed:
+            conn.rollback()
+        raise
+    finally:
+        if conn is not None and not conn.closed:
+            conn.close()
 
     return {
         "symbol": symbol,

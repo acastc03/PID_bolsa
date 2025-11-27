@@ -2,6 +2,7 @@
 
 from datetime import datetime, timedelta, timezone
 from typing import List, Dict, Any, Optional
+from psycopg2 import Error as PsycopgError
 
 import yfinance as yf
 import feedparser
@@ -48,20 +49,15 @@ def fetch_news_rss(q: str = "IBEX 35 OR Bolsa de Madrid", when: str = "7d") -> L
     return items
 
 
+from psycopg2 import Error as PsycopgError
+...
 def fetch_and_store_news_rss(
     symbol: str,
     q: Optional[str] = None,
     when: str = "7d",
     max_items: int = 10,
 ) -> int:
-    """
-    Usa Google News RSS (feedparser) para buscar noticias sobre 'q'
-    (por defecto algo relacionado con el símbolo) y las guarda en la tabla 'news'.
-
-    - symbol: se guarda en la columna symbol de la tabla (ej. '^IBEX')
-    - q: query libre para Google News (si es None, se genera a partir del símbolo)
-    - when: '7d', '1d', '30d', etc.
-    """
+    ...
     if q is None:
         q = f"{symbol} OR IBEX 35 OR Bolsa de Madrid"
 
@@ -70,45 +66,58 @@ def fetch_and_store_news_rss(
         logger.warning(f"RSS: no se han obtenido noticias para query={q}")
         return 0
 
-    conn = get_db_conn()
+    conn = None
     inserted = 0
+    try:
+        conn = get_db_conn()
+        with conn.cursor() as cur:
+            for item in items[:max_items]:
+                title = item["title"] or "(sin título)"
+                url = item["link"]
+                source = item["source"]
+                published_at = item["published"] or datetime.now(timezone.utc)
+                summary = None  # Google News RSS no trae resumen corto útil
 
-    for item in items[:max_items]:
-        title = item["title"] or "(sin título)"
-        url = item["link"]
-        source = item["source"]
-        published_at = item["published"] or datetime.now(timezone.utc)
-        summary = None  # Google News RSS no trae resumen corto útil
+                if not url:
+                    continue
 
-        if not url:
-            continue
+                cur.execute(
+                    """
+                    INSERT INTO news (symbol, published_at, title, source, url, summary, sentiment)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s)
+                    ON CONFLICT (url) DO UPDATE
+                    SET symbol = EXCLUDED.symbol,
+                        published_at = EXCLUDED.published_at,
+                        title = EXCLUDED.title,
+                        source = EXCLUDED.source,
+                        summary = EXCLUDED.summary;
+                    """,
+                    (
+                        symbol,
+                        published_at,
+                        title,
+                        source,
+                        url,
+                        summary,
+                        None,  # sentiment placeholder
+                    ),
+                )
+                inserted += 1
 
-        with conn, conn.cursor() as cur:
-            cur.execute(
-                """
-                INSERT INTO news (symbol, published_at, title, source, url, summary, sentiment)
-                VALUES (%s, %s, %s, %s, %s, %s, %s)
-                ON CONFLICT (url) DO UPDATE
-                SET symbol       = EXCLUDED.symbol,
-                    published_at = EXCLUDED.published_at,
-                    title        = EXCLUDED.title,
-                    source       = EXCLUDED.source,
-                    summary      = EXCLUDED.summary;
-                """,
-                (
-                    symbol,
-                    published_at,
-                    title,
-                    source,
-                    url,
-                    summary,
-                    None,  # sentiment placeholder
-                ),
-            )
-            inserted += 1
+        conn.commit()
+        logger.info(f"RSS: noticias guardadas/actualizadas para {symbol}: {inserted}")
+        return inserted
 
-    logger.info(f"RSS: noticias guardadas/actualizadas para {symbol}: {inserted}")
-    return inserted
+    except PsycopgError as e:
+        logger.error(f"Error guardando noticias RSS para {symbol}: {e}")
+        if conn is not None and not conn.closed:
+            conn.rollback()
+        raise
+
+    finally:
+        if conn is not None and not conn.closed:
+            conn.close()
+
 
 
 # ------------------------
@@ -139,57 +148,69 @@ def fetch_and_store_news_yf(
 
     cutoff = datetime.now(timezone.utc) - timedelta(days=days_back)
 
-    conn = get_db_conn()
+    conn = None
     inserted = 0
     used = 0
+    try:
+        conn = get_db_conn()
+        with conn.cursor() as cur:
+            for item in raw_news:
+                if used >= max_items:
+                    break
 
-    for item in raw_news:
-        if used >= max_items:
-            break
+                ts = item.get("providerPublishTime")
+                if ts is None:
+                    continue
 
-        ts = item.get("providerPublishTime")
-        if ts is None:
-            continue
+                published_at = datetime.fromtimestamp(ts, tz=timezone.utc)
+                if published_at < cutoff:
+                    continue
 
-        published_at = datetime.fromtimestamp(ts, tz=timezone.utc)
-        if published_at < cutoff:
-            continue
+                title = item.get("title") or "(sin título)"
+                url = item.get("link")
+                source = item.get("publisher")
+                summary = item.get("summary") or None
 
-        title = item.get("title") or "(sin título)"
-        url = item.get("link")
-        source = item.get("publisher")
-        summary = item.get("summary") or None
+                if not url:
+                    continue
 
-        if not url:
-            continue
+                cur.execute(
+                    """
+                    INSERT INTO news (symbol, published_at, title, source, url, summary, sentiment)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s)
+                    ON CONFLICT (url) DO UPDATE
+                    SET symbol = EXCLUDED.symbol,
+                        published_at = EXCLUDED.published_at,
+                        title = EXCLUDED.title,
+                        source = EXCLUDED.source,
+                        summary = EXCLUDED.summary;
+                    """,
+                    (
+                        symbol,
+                        published_at,
+                        title,
+                        source,
+                        url,
+                        summary,
+                        None,
+                    ),
+                )
+                inserted += 1
+                used += 1
 
-        with conn, conn.cursor() as cur:
-            cur.execute(
-                """
-                INSERT INTO news (symbol, published_at, title, source, url, summary, sentiment)
-                VALUES (%s, %s, %s, %s, %s, %s, %s)
-                ON CONFLICT (url) DO UPDATE
-                SET symbol       = EXCLUDED.symbol,
-                    published_at = EXCLUDED.published_at,
-                    title        = EXCLUDED.title,
-                    source       = EXCLUDED.source,
-                    summary      = EXCLUDED.summary;
-                """,
-                (
-                    symbol,
-                    published_at,
-                    title,
-                    source,
-                    url,
-                    summary,
-                    None,
-                ),
-            )
-            inserted += 1
-            used += 1
+        conn.commit()
+        logger.info(f"yfinance: noticias guardadas/actualizadas para {symbol}: {inserted}")
+        return inserted
 
-    logger.info(f"yfinance: noticias guardadas/actualizadas para {symbol}: {inserted}")
-    return inserted
+    except PsycopgError as e:
+        logger.error(f"Error guardando noticias yfinance para {symbol}: {e}")
+        if conn is not None and not conn.closed:
+            conn.rollback()
+        raise
+
+    finally:
+        if conn is not None and not conn.closed:
+            conn.close()
 
 
 #------------------------

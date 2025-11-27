@@ -1,6 +1,9 @@
+# mcp_server/scripts/fetch_data.py
+
 import yfinance as yf
 import pandas as pd
 from psycopg2 import Error as PsycopgError
+
 from .config import get_db_conn
 from . import logger
 
@@ -67,11 +70,12 @@ def update_prices_for_symbol(symbol: str, period: str = "1mo") -> int:
             f"Columnas disponibles: {list(df.columns)}"
         )
 
+    conn = None
     try:
         conn = get_db_conn()
-        with conn, conn.cursor() as cur:
+        with conn.cursor() as cur:
             for date, row in df.iterrows():
-                # close/adj_close
+                # close / adj_close
                 adj_close = float(row[close_col])
 
                 # volume: si es NaN, lo ponemos a 0
@@ -86,12 +90,12 @@ def update_prices_for_symbol(symbol: str, period: str = "1mo") -> int:
                     INSERT INTO prices (symbol, date, open, high, low, close, adj_close, volume)
                     VALUES (%s,%s,%s,%s,%s,%s,%s,%s)
                     ON CONFLICT (symbol, date) DO UPDATE
-                    SET open = EXCLUDED.open,
-                        high = EXCLUDED.high,
-                        low = EXCLUDED.low,
-                        close = EXCLUDED.close,
+                    SET open      = EXCLUDED.open,
+                        high      = EXCLUDED.high,
+                        low       = EXCLUDED.low,
+                        close     = EXCLUDED.close,
                         adj_close = EXCLUDED.adj_close,
-                        volume = EXCLUDED.volume;
+                        volume    = EXCLUDED.volume;
                     """,
                     (
                         symbol,
@@ -102,11 +106,19 @@ def update_prices_for_symbol(symbol: str, period: str = "1mo") -> int:
                         float(row[close_col]),
                         adj_close,
                         volume,
-                    )
+                    ),
                 )
+
+        conn.commit()
         logger.info(f"Insertadas/actualizadas {len(df)} filas de {symbol}")
         return len(df)
 
     except PsycopgError as e:
         logger.error(f"Error de Postgres al actualizar precios: {e}")
+        if conn is not None and not conn.closed:
+            conn.rollback()
         raise
+
+    finally:
+        if conn is not None and not conn.closed:
+            conn.close()

@@ -9,7 +9,6 @@ DB_NAME = os.getenv("DB_NAME", "indices")
 DB_USER = os.getenv("DB_USER", "finanzas")
 DB_PASS = os.getenv("DB_PASS", "finanzas_pass")
 
-@lru_cache(maxsize=1)
 def get_db_conn():
     conn = psycopg2.connect(
         host=DB_HOST,

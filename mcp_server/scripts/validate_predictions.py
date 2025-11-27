@@ -9,9 +9,11 @@ def validate_predictions_for_date(target_date: date):
     - Busca el precio real de cierre en la tabla prices.
     - Actualiza true_value y error_abs = |predicted_value - true_value|.
     """
-    conn = None
+    conn = get_db_conn()
+    real_prices = {}
+    updated = 0
+
     try:
-        conn = get_db_conn()
         with conn.cursor() as cur:
             # 1) Obtener precios reales de ese día
             cur.execute(
@@ -25,7 +27,15 @@ def validate_predictions_for_date(target_date: date):
             rows = cur.fetchall()
 
             real_prices = {symbol: close for (symbol, close) in rows}
-            updated = 0
+
+            # Si no hay precios para esa fecha, devolvemos algo informativo
+            if not real_prices:
+                return {
+                    "target_date": target_date.isoformat(),
+                    "symbols_with_price": [],
+                    "rows_updated": 0,
+                    "message": "No hay precios en 'prices' para esa fecha",
+                }
 
             # 2) Actualizar ml_predictions para cada símbolo con precio real
             for symbol, real_price in real_prices.items():
@@ -42,20 +52,25 @@ def validate_predictions_for_date(target_date: date):
                 )
                 updated += cur.rowcount
 
+        # Si todo ha ido bien, confirmamos
         conn.commit()
+
         return {
             "target_date": target_date.isoformat(),
             "symbols_with_price": list(real_prices.keys()),
             "rows_updated": updated,
         }
 
-    except PsycopgError:
-        if conn:
+    except PsycopgError as e:
+        # Solo hacemos rollback si la conexión sigue abierta
+        if conn is not None and not conn.closed:
             conn.rollback()
+        print(f"[validate_predictions_for_date] Error de BD: {e}")
         raise
 
     finally:
-        if conn:
+        # Cerramos la conexión solo si sigue abierta
+        if conn is not None and not conn.closed:
             conn.close()
 
 
@@ -63,4 +78,3 @@ def validate_predictions_yesterday():
     today = date.today()
     target_date = today - timedelta(days=1)
     return validate_predictions_for_date(target_date)
-
