@@ -150,7 +150,7 @@ Servidor especializado que:
 - Accede a **misma BD** que API REST
 - Permite **análisis conversacional** en lenguaje natural
 
-[Ver documentación completa →](mcp_server_claude/README.md)
+[Ver documentación completa →](docs/mcp/README.md)
 
 ### ⚡ n8n (Automatización)
 
@@ -450,10 +450,13 @@ Una vez configurado, puedes preguntarle a Claude:
 
 ### 📚 Documentación Completa
 
-- **[Guía de Integración MCP](mcp_server_claude/README.md)** - Setup detallado
-- **[Guía Docker](mcp_server_claude/DOCKER_SETUP.md)** - 3 métodos de ejecución
-- **[Ejemplos de Uso](mcp_server_claude/EJEMPLOS.md)** - Conversaciones de ejemplo
-- **[Guía Completa](mcp_server_claude/GUIA_COMPLETA.md)** - Arquitectura y troubleshooting
+📖 **[Ver toda la documentación en /docs](docs/)**
+
+- **[MCP Setup](docs/mcp/README.md)** - Integración con Claude Desktop
+- **[Docker Setup](docs/mcp/DOCKER_SETUP.md)** - Configuración Docker (macOS/Linux/Windows)
+- **[Ejemplos MCP](docs/mcp/EJEMPLOS.md)** - Casos de uso conversacionales
+- **[Guía MCP Completa](docs/mcp/GUIA_COMPLETA.md)** - Arquitectura y troubleshooting
+- **[Requirements](docs/REQUIREMENTS.md)** - Gestión de dependencias Python
 
 ### 🐳 Opciones de Ejecución
 
