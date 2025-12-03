@@ -1,0 +1,23 @@
+# Model Context Protocol
+mcp>=1.23.0
+
+# Database
+psycopg2-binary>=2.9.11
+
+# Configuration
+python-dotenv>=1.2.0
+
+# Financial Data
+yfinance>=0.2.66
+feedparser>=6.0.12
+
+# Data Processing
+pandas>=2.3.0,<3.0.0
+numpy>=2.3.0,<3.0.0
+
+# Machine Learning
+scikit-learn>=1.7.0,<2.0.0
+xgboost>=3.1.0
+lightgbm>=4.6.0
+catboost>=1.2.8
+prophet>=1.2.1

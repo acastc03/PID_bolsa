@@ -1,0 +1,44 @@
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+PID/
+
+# Database files
+data/db/
+*.pid
+postmaster.pid
+
+# Model files (too large for git)
+data/models/*.pkl
+
+# Logs
+*.log
+logs/
+
+# Environment variables
+.env.local
+.env.*.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# n8n data
+n8n_data/
+n8n/binaryData/
+n8n/git/
+
+# Docker
+.dockerignore
