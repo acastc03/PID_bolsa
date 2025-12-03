@@ -8,7 +8,9 @@ from pathlib import Path
 from . import logger
 
 # Directorio donde se guardan los modelos
-MODELS_DIR = Path("/app/data/models")
+# Usar ruta local del proyecto en lugar de ruta Docker
+PROJECT_ROOT = Path(__file__).parent.parent.parent
+MODELS_DIR = PROJECT_ROOT / "data" / "models"
 MODELS_DIR.mkdir(parents=True, exist_ok=True)
 
 
