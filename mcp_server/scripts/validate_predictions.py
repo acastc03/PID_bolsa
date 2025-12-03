@@ -52,7 +52,7 @@ def validate_predictions_for_date(target_date: date):
             )
             rows = cur.fetchall()
 
-            real_prices = {symbol: close for (symbol, close) in rows}
+            real_prices = {row['symbol']: row['close'] for row in rows}
 
             # Si no hay precios para esa fecha, devolvemos algo informativo
             if not real_prices:

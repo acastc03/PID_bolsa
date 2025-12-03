@@ -197,6 +197,86 @@ def _get_recent_news(symbol: str, limit: int = 5) -> list:
             conn.close()
 
 
+def _get_ml_predictions_performance(symbol: str, last_n_days: int = 7) -> Dict[str, Any]:
+    """
+    Obtiene métricas de rendimiento de los modelos ML validados.
+    
+    Calcula MAE y RMSE por modelo para las últimas N predicciones validadas,
+    y devuelve el mejor modelo según MAE.
+    
+    Args:
+        symbol: Símbolo del activo
+        last_n_days: Número de días a considerar para las métricas
+        
+    Returns:
+        Dict con métricas por modelo y mejor modelo
+    """
+    conn = None
+    try:
+        conn = get_db_conn()
+        with conn.cursor() as cur:
+            # Obtener predicciones validadas (donde true_value no es NULL)
+            cur.execute(
+                """
+                SELECT 
+                    model_name,
+                    AVG(error_abs) as avg_mae,
+                    SQRT(AVG(POWER(error_abs, 2))) as rmse,
+                    COUNT(*) as n_predictions,
+                    AVG(predicted_value) as avg_predicted,
+                    AVG(true_value) as avg_actual
+                FROM ml_predictions
+                WHERE symbol = %s
+                  AND true_value IS NOT NULL
+                  AND prediction_date >= CURRENT_DATE - INTERVAL '%s days'
+                GROUP BY model_name
+                ORDER BY avg_mae ASC;
+                """,
+                (symbol, last_n_days),
+            )
+            rows = cur.fetchall()
+
+        if not rows:
+            return {
+                "models": [],
+                "best_model": None,
+                "message": f"No hay predicciones validadas en los últimos {last_n_days} días"
+            }
+
+        models_performance = []
+        for r in rows:
+            models_performance.append({
+                "model_name": r["model_name"],
+                "mae": float(r["avg_mae"]) if r["avg_mae"] else None,
+                "rmse": float(r["rmse"]) if r["rmse"] else None,
+                "n_predictions": int(r["n_predictions"]),
+                "avg_predicted": float(r["avg_predicted"]) if r["avg_predicted"] else None,
+                "avg_actual": float(r["avg_actual"]) if r["avg_actual"] else None,
+            })
+
+        # El mejor modelo es el primero (menor MAE)
+        best_model = models_performance[0]["model_name"] if models_performance else None
+
+        return {
+            "models": models_performance,
+            "best_model": best_model,
+            "evaluation_period_days": last_n_days,
+        }
+
+    except PsycopgError as e:
+        logger.error(f"Error al obtener métricas de predicciones de {symbol}: {e}")
+        if conn is not None and not conn.closed:
+            conn.rollback()
+        return {
+            "models": [],
+            "best_model": None,
+            "error": str(e)
+        }
+    finally:
+        if conn is not None and not conn.closed:
+            conn.close()
+
+
 def _format_email_text(
     symbol: str,
     last_date,
@@ -285,19 +365,29 @@ def _format_email_text(
     return texto
 
 
-def build_daily_summary(symbol: str = "^IBEX") -> Dict[str, Any]:
+def build_daily_summary(symbol: str = "^IBEX", include_ml_performance: bool = True) -> Dict[str, Any]:
     """
     Construye un resumen diario listo para que lo consuma n8n:
     - precios (último, anterior, variación)
     - indicadores del día
     - última señal simple y ensemble
     - últimas noticias
+    - rendimiento de modelos ML (últimos 7 días)
     - texto plano para email
+    
+    Args:
+        symbol: Símbolo del activo
+        include_ml_performance: Si True, incluye métricas de predicciones ML
     """
     last_date, last_close, prev_close, abs_change, pct_change = _get_latest_price(symbol)
     indicators = _get_indicators_for_date(symbol, last_date)
     _, signals = _get_latest_signals(symbol)
     news = _get_recent_news(symbol, limit=5)
+    
+    # Obtener rendimiento de modelos ML
+    ml_performance = None
+    if include_ml_performance:
+        ml_performance = _get_ml_predictions_performance(symbol, last_n_days=7)
 
     email_text = _format_email_text(
         symbol,
@@ -310,6 +400,12 @@ def build_daily_summary(symbol: str = "^IBEX") -> Dict[str, Any]:
         signals,
         news,
     )
+    
+    # Añadir info de ML al email si está disponible
+    if ml_performance and ml_performance.get("best_model"):
+        best = ml_performance["best_model"]
+        best_mae = next((m["mae"] for m in ml_performance["models"] if m["model_name"] == best), None)
+        email_text += f"\n\n📊 Mejor modelo ML (últimos 7 días): {best} (MAE: {best_mae:.2f} puntos)"
 
     summary: Dict[str, Any] = {
         "symbol": symbol,
@@ -323,6 +419,7 @@ def build_daily_summary(symbol: str = "^IBEX") -> Dict[str, Any]:
         "indicators": indicators,
         "signals": signals,
         "news": news,
+        "ml_performance": ml_performance,
         "email_text": email_text,
     }
 

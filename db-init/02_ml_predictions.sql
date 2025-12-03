@@ -5,6 +5,7 @@ CREATE TABLE IF NOT EXISTS ml_predictions (
     run_date DATE NOT NULL,
     model_name VARCHAR NOT NULL,
     predicted_value DOUBLE PRECISION NOT NULL,
+    predicted_signal INTEGER,
     true_value DOUBLE PRECISION,
     error_abs DOUBLE PRECISION,
     created_at TIMESTAMP WITHOUT TIME ZONE DEFAULT NOW(),

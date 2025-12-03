@@ -30,6 +30,11 @@ from scripts.reporting import build_daily_summary
 
 from scripts.model_storage import delete_old_models, get_model_info
 
+from scripts.model_evaluation import (
+    get_model_performance_report,
+    should_retrain_models,
+)
+
 app = FastAPI(
     title="MCP Finance Server",
     version="0.1.0",
@@ -340,16 +345,152 @@ def predecir_ensemble_force(symbol: str = "^IBEX"):
 # ===================================================================
 
 @app.get("/daily_summary")
-def daily_summary(market: Market = Market.ibex35):
+def daily_summary(market: Market = Market.ibex35, include_ml: bool = True):
     try:
         symbol = resolve_symbol(market.value)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
-    summary = build_daily_summary(symbol)
+    summary = build_daily_summary(symbol, include_ml_performance=include_ml)
     # añadimos info del market original
     summary["market"] = market.value
     return summary
+
+
+@app.get("/model_performance")
+def model_performance(
+    symbol: str = "^IBEX",
+    days: int = 30
+):
+    """
+    Genera un reporte completo de rendimiento de modelos ML.
+    
+    Analiza predicciones validadas de los últimos N días para:
+    - Ver MAE y RMSE de cada modelo
+    - Identificar modelos con bajo rendimiento
+    - Determinar qué modelos necesitan reentrenamiento
+    
+    Útil para monitorizar la salud de los modelos antes de reentrenar.
+    """
+    from datetime import date, timedelta
+    
+    end_date = date.today()
+    start_date = end_date - timedelta(days=days)
+    
+    report = get_model_performance_report(
+        symbol=symbol,
+        start_date=start_date,
+        end_date=end_date
+    )
+    
+    return report
+
+
+@app.get("/should_retrain")
+def should_retrain(
+    symbol: str = "^IBEX",
+    mae_threshold: float = 200.0
+):
+    """
+    Determina si los modelos necesitan reentrenamiento.
+    
+    Analiza los últimos 7 días de predicciones validadas y recomienda
+    si es momento de reentrenar basándose en:
+    - MAE promedio por encima del umbral
+    - Número de modelos con bajo rendimiento
+    - Inconsistencia en predicciones
+    
+    Respuesta incluye:
+    - should_retrain: bool
+    - reasons: lista de razones
+    - models_to_retrain: modelos específicos que necesitan mejora
+    - detailed_report: análisis completo
+    """
+    analysis = should_retrain_models(symbol, mae_threshold)
+    return analysis
+
+
+@app.post("/validate_and_retrain")
+def validate_and_retrain(
+    date_str: str | None = Query(
+        default=None,
+        description="Fecha a validar en formato YYYY-MM-DD; si se omite, se usa ayer",
+    ),
+    symbol: str = "^IBEX"
+):
+    """
+    FLUJO DIARIO COMPLETO: Valida predicciones de ayer y reentrena modelos.
+    
+    Workflow:
+    1. Valida las predicciones del día especificado (o ayer por defecto)
+    2. Reentrena todos los modelos ML con los datos actualizados
+    3. Limpia modelos antiguos (mantiene últimos 7 días)
+    
+    Este endpoint está diseñado para ejecutarse diariamente desde n8n.
+    
+    Returns:
+        - validation_result: resultado de la validación
+        - retrain_result: resultado del reentrenamiento
+        - summary: resumen del proceso
+    """
+    # 1) VALIDAR PREDICCIONES
+    if date_str:
+        try:
+            target_date = datetime.strptime(date_str, "%Y-%m-%d").date()
+        except ValueError:
+            raise HTTPException(
+                status_code=400,
+                detail="Formato de fecha inválido, usa YYYY-MM-DD",
+            )
+        validation_result = validate_predictions_for_date(target_date)
+    else:
+        validation_result = validate_predictions_yesterday()
+    
+    # Verificar si la validación fue exitosa
+    if validation_result.get("error"):
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error en validación: {validation_result.get('message')}"
+        )
+    
+    if not validation_result.get("symbols_with_price"):
+        raise HTTPException(
+            status_code=404,
+            detail="No hay precios para validar en esa fecha"
+        )
+    
+    # 2) REENTRENAR MODELOS
+    try:
+        retrain_result = predict_ensemble(symbol, force_retrain=True)
+        
+        # 3) LIMPIAR MODELOS ANTIGUOS
+        deleted = delete_old_models(symbol, keep_latest=7)
+        
+        return {
+            "validation": {
+                "target_date": validation_result["target_date"],
+                "symbols_validated": validation_result["symbols_with_price"],
+                "predictions_updated": validation_result["rows_updated"],
+            },
+            "retrain": {
+                "models_retrained": len(retrain_result["ml_models"]),
+                "signal_ensemble": retrain_result["signal_ensemble"],
+                "models": retrain_result["ml_models"],
+            },
+            "cleanup": {
+                "old_models_deleted": deleted,
+            },
+            "summary": {
+                "status": "success",
+                "message": f"✅ Validadas {validation_result['rows_updated']} predicciones y reentrenados {len(retrain_result['ml_models'])} modelos",
+            }
+        }
+    
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error durante el reentrenamiento: {str(e)}"
+        )
 
 # ===================================================================
 # 7. ENDPOINTS LEGACY / DEPRECADOS (Mantener por compatibilidad)
