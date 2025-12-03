@@ -23,6 +23,7 @@ Añade esta configuración:
 
 #### Opción A: Docker (Recomendado) 🐳
 
+**macOS/Linux:**
 ```json
 {
   "mcpServers": {
@@ -34,7 +35,7 @@ Añade esta configuración:
 }
 ```
 
-**Ejemplo:**
+**Ejemplo macOS:**
 ```json
 {
   "mcpServers": {
@@ -46,13 +47,31 @@ Añade esta configuración:
 }
 ```
 
+**Windows:**
+```json
+{
+  "mcpServers": {
+    "finance-predictor": {
+      "command": "bash",
+      "args": [
+        "C:\\Users\\TuUsuario\\PID_bolsa\\mcp_server_claude\\run_docker_optimized.sh"
+      ]
+    }
+  }
+}
+```
+
+💡 **Windows**: Necesitas WSL2 o Git Bash instalado para ejecutar scripts `.sh`
+
 ✅ **Ventajas:**
 - Aislamiento completo
 - No requiere instalar dependencias localmente
 - Funciona igual en cualquier máquina
+- Mismo entorno en desarrollo y producción
 
 #### Opción B: Python Directo 🐍
 
+**macOS/Linux:**
 ```json
 {
   "mcpServers": {
@@ -74,7 +93,32 @@ Añade esta configuración:
 }
 ```
 
-⚠️ **IMPORTANTE:** Cambia las rutas absolutas a la ubicación real de tu proyecto.
+**Windows:**
+```json
+{
+  "mcpServers": {
+    "finance-predictor": {
+      "command": "python",
+      "args": [
+        "C:\\Users\\TuUsuario\\PID_bolsa\\mcp_server_claude\\server.py"
+      ],
+      "env": {
+        "DB_HOST": "localhost",
+        "DB_PORT": "15433",
+        "DB_NAME": "indices",
+        "DB_USER": "finanzas",
+        "DB_PASS": "finanzas_pass",
+        "PYTHONPATH": "C:\\Users\\TuUsuario\\PID_bolsa"
+      }
+    }
+  }
+}
+```
+
+⚠️ **IMPORTANTE:** 
+- **macOS/Linux**: Usa rutas con `/` (ejemplo: `/Users/usuario/proyecto`)
+- **Windows**: Usa rutas con `\\` (ejemplo: `C:\\Users\\usuario\\proyecto`)
+- **Windows**: Usa `python` en lugar de `python3`
 
 📖 **Más información:** Ver [DOCKER_SETUP.md](./DOCKER_SETUP.md) para comparación detallada.
 
