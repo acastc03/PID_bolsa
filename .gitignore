@@ -22,6 +22,7 @@ data/models/*.pkl
 logs/
 
 # Environment variables
+.env
 .env.local
 .env.*.local
 
