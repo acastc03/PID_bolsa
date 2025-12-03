@@ -47,6 +47,12 @@ Sistema completo de ingesta, procesamiento y predicción de datos financieros pa
   - `news`: Noticias con análisis de sentiment
   - `ml_predictions`: Predicciones diarias de modelos ML
 
+### 0. 🤖 Claude Desktop Integration (NUEVO)
+- **Servidor MCP** en `mcp_server_claude/`
+- Permite a Claude Desktop acceder a todas las funcionalidades
+- 7 herramientas disponibles para análisis conversacional
+- [Ver guía de integración](mcp_server_claude/README.md)
+
 ### 2. MCP Server (FastAPI)
 API REST para:
 - Actualización de precios y noticias
@@ -186,6 +192,52 @@ curl "http://localhost:8080/daily_summary?market=ibex35"
 # Información de modelos guardados
 curl "http://localhost:8080/model_info?symbol=^IBEX"
 ```
+
+## 🤖 Integración con Claude Desktop
+
+### Configuración Rápida
+
+1. **Instalar dependencias del servidor MCP:**
+```bash
+cd mcp_server_claude
+pip install -r requirements.txt
+```
+
+2. **Configurar Claude Desktop:**
+
+Editar `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS):
+
+```json
+{
+  "mcpServers": {
+    "finance-predictor": {
+      "command": "python3",
+      "args": [
+        "/ruta/completa/al/proyecto/PID_bolsa/mcp_server_claude/server.py"
+      ],
+      "env": {
+        "DB_HOST": "localhost",
+        "DB_PORT": "15433",
+        "DB_NAME": "indices",
+        "DB_USER": "finanzas",
+        "DB_PASS": "finanzas_pass",
+        "PYTHONPATH": "/ruta/completa/al/proyecto/PID_bolsa"
+      }
+    }
+  }
+}
+```
+
+3. **Reiniciar Claude Desktop**
+
+Ahora puedes preguntarle a Claude cosas como:
+- "¿Cuál es el precio actual del IBEX35?"
+- "Dame la predicción ML para el S&P 500"
+- "Muéstrame el resumen diario completo"
+
+**📖 [Guía completa de integración con Claude](mcp_server_claude/README.md)**
+
+---
 
 ## 🔧 Desarrollo Local
 
