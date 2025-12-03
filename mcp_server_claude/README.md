@@ -21,13 +21,45 @@ Edita el archivo de configuración de Claude Desktop:
 
 Añade esta configuración:
 
+#### Opción A: Docker (Recomendado) 🐳
+
+```json
+{
+  "mcpServers": {
+    "finance-predictor": {
+      "command": "/ruta/absoluta/a/tu/proyecto/mcp_server_claude/run_docker_optimized.sh",
+      "args": []
+    }
+  }
+}
+```
+
+**Ejemplo:**
+```json
+{
+  "mcpServers": {
+    "finance-predictor": {
+      "command": "/Users/gonzalo/Desktop/ING.DATOS/4º/PID/PID_bolsa/mcp_server_claude/run_docker_optimized.sh",
+      "args": []
+    }
+  }
+}
+```
+
+✅ **Ventajas:**
+- Aislamiento completo
+- No requiere instalar dependencias localmente
+- Funciona igual en cualquier máquina
+
+#### Opción B: Python Directo 🐍
+
 ```json
 {
   "mcpServers": {
     "finance-predictor": {
       "command": "python3",
       "args": [
-        "/Users/gonzalo/Desktop/ING.DATOS/4º/PID/PID_bolsa/mcp_server_claude/server.py"
+        "/ruta/absoluta/a/tu/proyecto/mcp_server_claude/server.py"
       ],
       "env": {
         "DB_HOST": "localhost",
@@ -35,14 +67,16 @@ Añade esta configuración:
         "DB_NAME": "indices",
         "DB_USER": "finanzas",
         "DB_PASS": "finanzas_pass",
-        "PYTHONPATH": "/Users/gonzalo/Desktop/ING.DATOS/4º/PID/PID_bolsa"
+        "PYTHONPATH": "/ruta/absoluta/a/tu/proyecto"
       }
     }
   }
 }
 ```
 
-⚠️ **IMPORTANTE:** Cambia la ruta absoluta en `args` a la ubicación real de tu proyecto.
+⚠️ **IMPORTANTE:** Cambia las rutas absolutas a la ubicación real de tu proyecto.
+
+📖 **Más información:** Ver [DOCKER_SETUP.md](./DOCKER_SETUP.md) para comparación detallada.
 
 ### 3. Reiniciar Claude Desktop
 
