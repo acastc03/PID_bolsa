@@ -17,6 +17,13 @@ postmaster.pid
 # Model files (too large for git)
 data/models/*.pkl
 
+# ML training artifacts
+mcp_server/catboost_info/
+mcp_server/data/
+
+# Test scripts (temporary)
+test_*.py
+
 # Logs
 *.log
 logs/
