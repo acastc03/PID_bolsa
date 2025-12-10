@@ -54,6 +54,54 @@ def health():
     return {"status": "ok"}
 
 
+@app.get("/markets")
+def list_markets():
+    """
+    Lista todos los mercados financieros soportados.
+    
+    Devuelve información sobre los 30+ índices globales disponibles,
+    organizados por región geográfica.
+    """
+    from scripts.assets import SYMBOL_ALIASES, Market
+    
+    # Organizar mercados por región
+    markets_by_region = {
+        "europe": [
+            {"name": "IBEX35", "description": "IBEX 35 - España", "symbol": "^IBEX"},
+            {"name": "FTSE100", "description": "FTSE 100 - Reino Unido", "symbol": "^FTSE"},
+            {"name": "DAX", "description": "DAX 40 - Alemania", "symbol": "^GDAXI"},
+            {"name": "CAC40", "description": "CAC 40 - Francia", "symbol": "^FCHI"},
+            {"name": "FTSEMIB", "description": "FTSE MIB - Italia", "symbol": "FTSEMIB.MI"},
+            {"name": "EUROSTOXX50", "description": "Euro Stoxx 50 - Europa", "symbol": "^STOXX50E"},
+        ],
+        "americas": [
+            {"name": "SP500", "description": "S&P 500 - USA", "symbol": "^GSPC"},
+            {"name": "DOW", "description": "Dow Jones - USA", "symbol": "^DJI"},
+            {"name": "NASDAQ", "description": "NASDAQ Composite - USA", "symbol": "^IXIC"},
+            {"name": "NASDAQ100", "description": "NASDAQ 100 - USA", "symbol": "^NDX"},
+            {"name": "RUSSELL2000", "description": "Russell 2000 - USA", "symbol": "^RUT"},
+            {"name": "VIX", "description": "Volatility Index - USA", "symbol": "^VIX"},
+            {"name": "BOVESPA", "description": "Ibovespa - Brasil", "symbol": "^BVSP"},
+            {"name": "IPC", "description": "IPC - México", "symbol": "^MXX"},
+        ],
+        "asia_pacific": [
+            {"name": "NIKKEI", "description": "Nikkei 225 - Japón", "symbol": "^N225"},
+            {"name": "HANGSENG", "description": "Hang Seng - Hong Kong", "symbol": "^HSI"},
+            {"name": "SHANGHAI", "description": "Shanghai Composite - China", "symbol": "000001.SS"},
+            {"name": "SENSEX", "description": "BSE Sensex - India", "symbol": "^BSESN"},
+            {"name": "NIFTY50", "description": "Nifty 50 - India", "symbol": "^NSEI"},
+            {"name": "ASX200", "description": "ASX 200 - Australia", "symbol": "^AXJO"},
+            {"name": "KOSPI", "description": "KOSPI - Corea del Sur", "symbol": "^KS11"},
+        ],
+    }
+    
+    return {
+        "total_markets": sum(len(markets) for markets in markets_by_region.values()),
+        "markets_by_region": markets_by_region,
+        "available_in_enum": [m.value for m in Market],
+    }
+
+
 # ===================================================================
 # 2. ENDPOINTS DE INGESTA DE DATOS (ETL - Extract)
 # ===================================================================
@@ -61,7 +109,14 @@ def health():
 @app.get("/update_prices")
 def update_prices(market: Market = Market.ibex35, period: str = "1mo"):
     """
-    Actualiza precios históricos para el índice seleccionado (IBEX35, SP500, NASDAQ, NIKKEI).
+    Actualiza precios históricos para el índice seleccionado.
+    
+    Soporta 30+ mercados globales:
+    - Europa: IBEX35, FTSE100, DAX, CAC40, FTSEMIB, EUROSTOXX50
+    - América: SP500, DOW, NASDAQ, NASDAQ100, RUSSELL2000, VIX, BOVESPA, IPC
+    - Asia-Pacífico: NIKKEI, HANGSENG, SHANGHAI, SENSEX, NIFTY50, ASX200, KOSPI
+    
+    Period: 1d, 5d, 1mo, 3mo, 6mo, 1y, 2y, 5y, 10y, ytd, max
     """
     try:
         symbol = resolve_symbol(market.value)
@@ -87,8 +142,15 @@ def update_news(
     limit_yf: int = 10,
 ):
     """
-    Descarga noticias para una lista de índices separados por comas
-    (ej: IBEX35,SP500,NASDAQ) y las guarda en la tabla 'news'.
+    Descarga noticias para una lista de índices separados por comas.
+    
+    Ejemplos de mercados:
+    - Europa: IBEX35,FTSE100,DAX,CAC40
+    - América: SP500,DOW,NASDAQ,BOVESPA
+    - Asia: NIKKEI,HANGSENG,SENSEX
+    - Global: IBEX35,SP500,NIKKEI,FTSE100,DAX
+    
+    Las noticias se guardan en la tabla 'news'.
     """
     market_list = [m.strip() for m in markets.split(",") if m.strip()]
 
@@ -122,6 +184,11 @@ def update_news(
 
 @app.get("/compute_indicators")
 def compute_indicators(market: Market = Market.ibex35):
+    """
+    Calcula indicadores técnicos (SMA, RSI, volatilidad) para un mercado.
+    
+    Soporta 30+ mercados globales. Los indicadores se guardan en la tabla 'indicators'.
+    """
     try:
         symbol = resolve_symbol(market.value)
     except ValueError as e:
@@ -132,6 +199,12 @@ def compute_indicators(market: Market = Market.ibex35):
 
 @app.get("/compute_signals")
 def compute_signals(market: Market = Market.ibex35):
+    """
+    Genera señales de trading simples basadas en indicadores técnicos.
+    
+    Señales: +1 (COMPRA), 0 (NEUTRAL), -1 (VENTA)
+    Soporta 30+ mercados globales.
+    """
     try:
         symbol = resolve_symbol(market.value)
     except ValueError as e:
@@ -346,6 +419,19 @@ def predecir_ensemble_force(symbol: str = "^IBEX"):
 
 @app.get("/daily_summary")
 def daily_summary(market: Market = Market.ibex35, include_ml: bool = True):
+    """
+    Genera un resumen completo del día para un mercado.
+    
+    Incluye:
+    - Precio actual y variación
+    - Indicadores técnicos (SMA, RSI, volatilidad)
+    - Señales de trading
+    - Últimas noticias
+    - Rendimiento de modelos ML (opcional)
+    
+    Soporta 30+ mercados globales.
+    Ideal para reportes diarios automatizados.
+    """
     try:
         symbol = resolve_symbol(market.value)
     except ValueError as e:
