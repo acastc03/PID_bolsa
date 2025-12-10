@@ -47,6 +47,17 @@ except ImportError as e:
 # Inicializar servidor MCP
 server = Server("finance-predictor")
 
+# Lista de mercados soportados (30+ índices globales)
+SUPPORTED_MARKETS = [
+    # Europa
+    "IBEX35", "FTSE100", "DAX", "CAC40", "FTSEMIB", "EUROSTOXX50",
+    # América
+    "SP500", "DOW", "NASDAQ", "NASDAQ100", "RUSSELL2000", "VIX",
+    "BOVESPA", "IPC",
+    # Asia-Pacífico
+    "NIKKEI", "HANGSENG", "SHANGHAI", "SENSEX", "NIFTY50", "ASX200", "KOSPI"
+]
+
 
 def get_latest_price(symbol: str) -> dict[str, Any]:
     """Obtiene el último precio disponible para un símbolo."""
@@ -140,11 +151,16 @@ async def handle_list_tools() -> list[types.Tool]:
             name="get_market_price",
             description="""Obtiene el último precio disponible de un mercado financiero.
             
-            Mercados soportados:
-            - IBEX35: Índice español
-            - SP500: S&P 500 estadounidense
-            - NASDAQ: NASDAQ Composite
-            - NIKKEI: Nikkei 225 japonés
+            Mercados soportados (30+ índices globales):
+            
+            🇪🇺 Europa: IBEX35 (España), FTSE100 (UK), DAX (Alemania), CAC40 (Francia), 
+                        FTSEMIB (Italia), EUROSTOXX50
+            
+            🇺🇸 América: SP500, DOW, NASDAQ, NASDAQ100, RUSSELL2000, VIX (volatilidad),
+                         BOVESPA (Brasil), IPC (México)
+            
+            🌏 Asia-Pacífico: NIKKEI (Japón), HANGSENG (Hong Kong), SHANGHAI (China),
+                              SENSEX (India), NIFTY50 (India), ASX200 (Australia), KOSPI (Corea)
             
             Devuelve: fecha, precio de cierre, apertura, máximo, mínimo y volumen.""",
             inputSchema={
@@ -152,8 +168,8 @@ async def handle_list_tools() -> list[types.Tool]:
                 "properties": {
                     "market": {
                         "type": "string",
-                        "description": "Nombre del mercado (IBEX35, SP500, NASDAQ, NIKKEI)",
-                        "enum": ["IBEX35", "SP500", "NASDAQ", "NIKKEI"]
+                        "description": "Nombre del mercado (ver lista completa en descripción)",
+                        "enum": SUPPORTED_MARKETS
                     }
                 },
                 "required": ["market"]
@@ -179,8 +195,8 @@ async def handle_list_tools() -> list[types.Tool]:
                 "properties": {
                     "market": {
                         "type": "string",
-                        "description": "Nombre del mercado",
-                        "enum": ["IBEX35", "SP500", "NASDAQ", "NIKKEI"]
+                        "description": "Nombre del mercado (30+ índices disponibles)",
+                        "enum": SUPPORTED_MARKETS
                     },
                     "force_retrain": {
                         "type": "boolean",
@@ -206,8 +222,8 @@ async def handle_list_tools() -> list[types.Tool]:
                 "properties": {
                     "market": {
                         "type": "string",
-                        "description": "Nombre del mercado",
-                        "enum": ["IBEX35", "SP500", "NASDAQ", "NIKKEI"]
+                        "description": "Nombre del mercado (30+ índices disponibles)",
+                        "enum": SUPPORTED_MARKETS
                     }
                 },
                 "required": ["market"]
@@ -224,8 +240,8 @@ async def handle_list_tools() -> list[types.Tool]:
                 "properties": {
                     "market": {
                         "type": "string",
-                        "description": "Nombre del mercado",
-                        "enum": ["IBEX35", "SP500", "NASDAQ", "NIKKEI"]
+                        "description": "Nombre del mercado (30+ índices disponibles)",
+                        "enum": SUPPORTED_MARKETS
                     },
                     "limit": {
                         "type": "integer",
@@ -249,8 +265,8 @@ async def handle_list_tools() -> list[types.Tool]:
                 "properties": {
                     "market": {
                         "type": "string",
-                        "description": "Nombre del mercado",
-                        "enum": ["IBEX35", "SP500", "NASDAQ", "NIKKEI"]
+                        "description": "Nombre del mercado (30+ índices disponibles)",
+                        "enum": SUPPORTED_MARKETS
                     },
                     "period": {
                         "type": "string",
@@ -279,8 +295,8 @@ async def handle_list_tools() -> list[types.Tool]:
                 "properties": {
                     "market": {
                         "type": "string",
-                        "description": "Nombre del mercado",
-                        "enum": ["IBEX35", "SP500", "NASDAQ", "NIKKEI"]
+                        "description": "Nombre del mercado (30+ índices disponibles)",
+                        "enum": SUPPORTED_MARKETS
                     }
                 },
                 "required": ["market"]

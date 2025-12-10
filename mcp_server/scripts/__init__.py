@@ -8,7 +8,7 @@ Proporciona módulos para:
 
 Configuración:
 - Logger configurado a nivel INFO por defecto
-- Símbolos por defecto: IBEX35 y S&P500
+- Símbolos por defecto: Principales índices globales (Europa, América, Asia)
 """
 
 import logging
@@ -18,4 +18,12 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("mcp_finance")
 
 # Símbolos por defecto para operaciones batch
-DEFAULT_SYMBOLS = ["^IBEX", "^GSPC"]
+# Incluye principales índices de cada región
+DEFAULT_SYMBOLS = [
+    "^IBEX",   # España - IBEX 35
+    "^GSPC",   # USA - S&P 500
+    "^IXIC",   # USA - NASDAQ
+    "^N225",   # Japón - Nikkei 225
+    "^FTSE",   # UK - FTSE 100
+    "^GDAXI",  # Alemania - DAX
+]
