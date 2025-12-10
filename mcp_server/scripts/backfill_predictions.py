@@ -1,8 +1,27 @@
 
-#ACTUALMENTE NO FUNCIONA
-#Ahora mismo _LOAD_FEATURES (de models.py) cierra la conexión con el with conn, ...; 
+"""
+Script de backfill de predicciones históricas.
 
+PROBLEMAS CONOCIDOS:
+1. ⚠️ LOOK-AHEAD BIAS: predict_ensemble() usa TODOS los datos hasta hoy,
+   no solo los datos disponibles hasta la fecha del backfill.
+   
+   Esto hace que las predicciones "históricas" tengan información del futuro,
+   invalidando cualquier análisis de rendimiento histórico.
 
+2. ⚠️ EJECUCIÓN: Este script debe ejecutarse DENTRO del contenedor Docker:
+   
+   docker exec -it mcp_finance python -m scripts.backfill_predictions
+   
+   No funcionará si se ejecuta directamente desde tu máquina (DB_HOST=db no existe).
+
+SOLUCIÓN RECOMENDADA:
+- Modificar predict_ensemble() para aceptar un parámetro 'as_of_date'
+- Filtrar datos en _load_features() para usar solo datos <= as_of_date
+- Esto requiere refactorización significativa del sistema de modelos
+
+POR AHORA: Usar solo para pruebas, NO para análisis de rendimiento real.
+"""
 
 from datetime import date, timedelta
 from .config import get_db_conn           # o from .config import get_db_conn si usas paquete
@@ -115,8 +134,23 @@ def backfill_predictions_for_symbol(symbol: str, start_date: date = None, end_da
 
 
 if __name__ == "__main__":
+    """
+    Para ejecutar este script:
+    
+    1. Desde dentro del contenedor:
+       docker exec -it mcp_finance python -m scripts.backfill_predictions
+    
+    2. O entrar al contenedor interactivamente:
+       docker exec -it mcp_finance bash
+       cd /app
+       python -m scripts.backfill_predictions
+    """
     # Ejemplo: backtest completo para ^IBEX
     symbol = "^IBEX"
     start = date(2025, 11, 17)
     end   = date(2025, 11, 21)
+    
+    print("⚠️  ADVERTENCIA: Este backfill tiene look-ahead bias!")
+    print("   Las predicciones usan información del futuro.\n")
+    
     backfill_predictions_for_symbol(symbol, start_date=start, end_date=end)
