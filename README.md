@@ -27,6 +27,7 @@
 - **Votación Inteligente**: Señales de trading (+1, 0, -1) por consenso de modelos
 - **Validación Automática**: Backtesting diario comparando predicciones vs valores reales
 - **Backfill Histórico**: Generación de predicciones históricas sin look-ahead bias para análisis retrospectivo
+- **Hyperparameter Tuning**: Grid search o Bayesian optimization, auto-reentrenamiento con mejores parámetros, configuraciones optimizadas por mercado
 - **Almacenamiento Persistente**: Modelos entrenados guardados para reutilización
 
 ### 📊 Análisis de Mercados
