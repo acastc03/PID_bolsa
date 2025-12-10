@@ -217,20 +217,49 @@ def fetch_and_store_news_yf(
                 if used >= max_items:
                     break
 
-                ts = item.get("providerPublishTime")
-                if ts is None:
-                    continue
+                # Manejar dos estructuras diferentes de yfinance:
+                # Estructura A: {title, link, providerPublishTime, publisher, summary}
+                # Estructura B: {id, content: {title, provider, ...}}
+                
+                # Intentar extraer de estructura B (nested content)
+                content = item.get("content", {})
+                if content and isinstance(content, dict):
+                    title = content.get("title") or "(sin título)"
+                    url = content.get("clickThroughUrl", {}).get("url") if content.get("clickThroughUrl") else None
+                    source = content.get("provider", {}).get("displayName") if content.get("provider") else None
+                    summary = content.get("summary") or None
+                    
+                    # Timestamp en formato ISO (ej: "2025-12-10T14:50:00Z")
+                    pubdate_str = content.get("pubDate")
+                    if pubdate_str:
+                        try:
+                            # Parsear ISO 8601 timestamp
+                            published_at = datetime.fromisoformat(pubdate_str.replace('Z', '+00:00'))
+                        except (ValueError, AttributeError):
+                            published_at = datetime.now(timezone.utc)
+                    else:
+                        published_at = datetime.now(timezone.utc)
+                    
+                    # Aplicar filtro de días
+                    if published_at < cutoff:
+                        continue
+                else:
+                    # Estructura A (original)
+                    ts = item.get("providerPublishTime")
+                    if ts is None:
+                        continue
 
-                published_at = datetime.fromtimestamp(ts, tz=timezone.utc)
-                if published_at < cutoff:
-                    continue
+                    published_at = datetime.fromtimestamp(ts, tz=timezone.utc)
+                    if published_at < cutoff:
+                        continue
 
-                title = item.get("title") or "(sin título)"
-                url = item.get("link")
-                source = item.get("publisher")
-                summary = item.get("summary") or None
+                    title = item.get("title") or "(sin título)"
+                    url = item.get("link")
+                    source = item.get("publisher")
+                    summary = item.get("summary") or None
 
                 if not url:
+                    logger.debug(f"yfinance: Noticia sin URL, saltando: {title}")
                     continue
 
                 cur.execute(
