@@ -13,7 +13,7 @@
 
 *Predicción de mercados financieros mediante Machine Learning, automatización inteligente y análisis conversacional con IA*
 
-[Características](#-características) • [Instalación](#-instalación-rápida) • [Arquitectura](#-arquitectura) • [API](#-api-rest) • [MCP](#-integración-con-claude-desktop) • [Documentación](#-documentación)
+[Características](#-características) • [Instalación](#-instalación-rápida) • [Arquitectura](#-arquitectura) • [API](#-api-rest) • [Machine Learning](#-machine-learning) • [MCP](#-integración-con-claude-desktop) • [Documentación](#-documentación-completa)
 
 </div>
 
@@ -26,13 +26,15 @@
 - **Ensemble de 7 Modelos ML**: LinearRegression, RandomForest, Prophet, XGBoost, SVR, LightGBM, CatBoost
 - **Votación Inteligente**: Señales de trading (+1, 0, -1) por consenso de modelos
 - **Validación Automática**: Backtesting diario comparando predicciones vs valores reales
+- **Backfill Histórico**: Generación de predicciones históricas sin look-ahead bias para análisis retrospectivo
 - **Almacenamiento Persistente**: Modelos entrenados guardados para reutilización
 
 ### 📊 Análisis de Mercados
 
-- **4 Índices Globales**: IBEX35 (España), S&P500, NASDAQ (USA), NIKKEI (Japón)
+- **3 Índices Principales**: IBEX35 (España), S&P500 (USA), NIKKEI (Japón)
+- **Cobertura Global**: Europa, América, Asia-Pacífico
 - **Indicadores Técnicos**: SMA(20/50), RSI(14), Volatilidad, Retornos
-- **Análisis de Noticias**: Scraping y sentiment analysis de fuentes financieras
+- **Análisis de Noticias**: Dual-source (Yahoo Finance + Google RSS) con soporte para estructuras múltiples
 - **Datos Históricos**: Precios OHLCV desde Yahoo Finance
 
 ### 🔄 Automatización & Orquestación
@@ -452,10 +454,14 @@ Una vez configurado, puedes preguntarle a Claude:
 
 📖 **[Ver toda la documentación en /docs](docs/)**
 
+#### 🤖 Integración con IA
 - **[MCP Setup](docs/mcp/README.md)** - Integración con Claude Desktop
 - **[Docker Setup](docs/mcp/DOCKER_SETUP.md)** - Configuración Docker (macOS/Linux/Windows)
 - **[Ejemplos MCP](docs/mcp/EJEMPLOS.md)** - Casos de uso conversacionales
 - **[Guía MCP Completa](docs/mcp/GUIA_COMPLETA.md)** - Arquitectura y troubleshooting
+
+#### 📊 Machine Learning
+- **[Backfill de Predicciones](BACKFILL_README.md)** - Predicciones históricas sin look-ahead bias
 - **[Requirements](docs/REQUIREMENTS.md)** - Gestión de dependencias Python
 
 ### 🐳 Opciones de Ejecución
@@ -591,6 +597,84 @@ Consenso: 85.7% (6/7 modelos)
 - **Métricas**: Error absoluto, error porcentual
 - **Almacenamiento**: Todas las predicciones se guardan en `ml_predictions`
 - **Tracking**: Performance individual por modelo y por mercado
+
+### 🔄 Backfill de Predicciones Históricas
+
+El sistema incluye funcionalidad para **generar predicciones históricas sin look-ahead bias**, útil para:
+- ✅ Análisis de rendimiento histórico de modelos
+- ✅ Llenar datos faltantes si el sistema estuvo caído
+- ✅ Backtesting de estrategias de trading
+- ✅ Evaluación de modelos en períodos específicos
+
+#### Características del Backfill
+
+El script implementa **filtrado temporal estricto** para evitar información del futuro:
+
+```python
+# Para cada fecha histórica D:
+predict_ensemble(symbol, as_of_date=D, force_retrain=True)
+# ✅ Solo usa datos disponibles hasta fecha D
+# ✅ Reentrena modelos con datos históricos correctos
+# ✅ Sin look-ahead bias
+```
+
+**Flujo del Backfill:**
+
+```mermaid
+graph LR
+    A[Fecha D] --> B[_load_features<br/>WHERE date <= D]
+    B --> C[Entrenar 7 modelos<br/>con datos hasta D]
+    C --> D[Generar predicción<br/>para D+1]
+    D --> E[Guardar en<br/>ml_predictions]
+    
+    style A fill:#3B82F6,stroke:#1E40AF,color:#fff
+    style C fill:#7C3AED,stroke:#5B21B6,color:#fff
+    style E fill:#10B981,stroke:#059669,color:#fff
+```
+
+#### Cómo Usar
+
+**Opción 1: Script Helper (Recomendado)**
+```bash
+./run_backfill.sh
+```
+
+**Opción 2: Directo desde Docker**
+```bash
+docker exec -it mcp_finance python -m scripts.backfill_predictions
+```
+
+**Opción 3: Personalizado en Python**
+```python
+from scripts.backfill_predictions import backfill_predictions_for_symbol
+from datetime import date
+
+# Backfill para IBEX35 (1-10 diciembre 2024)
+backfill_predictions_for_symbol(
+    symbol="^IBEX",
+    start_date=date(2024, 12, 1),
+    end_date=date(2024, 12, 10)
+)
+```
+
+#### Consideraciones Importantes
+
+⚠️ **Rendimiento**: El backfill reentrena 7 modelos ML por cada fecha, lo que puede tardar varios minutos por día.
+
+⚠️ **Requisitos**: Deben existir datos de precios e indicadores para todas las fechas del rango.
+
+⚠️ **Ejecución**: Solo funciona dentro del contenedor Docker (requiere `DB_HOST=db`).
+
+✅ **Validación**: Después del backfill, valida los resultados:
+```bash
+# Validar predicciones de una fecha específica
+curl "http://localhost:8082/validate_predictions?date_str=2024-12-05"
+
+# Analizar rendimiento en un rango
+curl "http://localhost:8082/model_performance?symbol=^IBEX&days=30"
+```
+
+📚 **Documentación completa**: Ver `BACKFILL_README.md` para detalles técnicos sobre la implementación.
 
 ## 🗂️ Estructura del Proyecto
 
