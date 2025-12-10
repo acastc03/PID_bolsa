@@ -19,33 +19,60 @@ from .model_storage import save_model, load_model, model_exists
 from psycopg2 import Error as PsycopgError
 
 
-def _load_features(symbol: str) -> pd.DataFrame:
+def _load_features(symbol: str, as_of_date=None) -> pd.DataFrame:
     """
     Carga precios + indicadores para un símbolo y construye un DataFrame
     de features indexado por fecha.
+    
+    Args:
+        symbol: Símbolo del activo
+        as_of_date: Si se especifica (date), solo carga datos hasta esa fecha.
+                   Útil para backfill sin look-ahead bias.
     """
     conn = None
     try:
         conn = get_db_conn()
         with conn.cursor() as cur:
-            cur.execute(
-                """
-                SELECT
-                    p.date,
-                    p.close,
-                    i.sma_20,
-                    i.sma_50,
-                    i.vol_20,
-                    i.rsi_14
-                FROM prices p
-                LEFT JOIN indicators i
-                    ON p.symbol = i.symbol
-                   AND p.date = i.date
-                WHERE p.symbol = %s
-                ORDER BY p.date
-                """,
-                (symbol,),
-            )
+            if as_of_date:
+                # Filtrar datos hasta as_of_date (sin información del futuro)
+                cur.execute(
+                    """
+                    SELECT
+                        p.date,
+                        p.close,
+                        i.sma_20,
+                        i.sma_50,
+                        i.vol_20,
+                        i.rsi_14
+                    FROM prices p
+                    LEFT JOIN indicators i
+                        ON p.symbol = i.symbol
+                       AND p.date = i.date
+                    WHERE p.symbol = %s AND p.date <= %s
+                    ORDER BY p.date
+                    """,
+                    (symbol, as_of_date),
+                )
+            else:
+                # Comportamiento original: todos los datos
+                cur.execute(
+                    """
+                    SELECT
+                        p.date,
+                        p.close,
+                        i.sma_20,
+                        i.sma_50,
+                        i.vol_20,
+                        i.rsi_14
+                    FROM prices p
+                    LEFT JOIN indicators i
+                        ON p.symbol = i.symbol
+                       AND p.date = i.date
+                    WHERE p.symbol = %s
+                    ORDER BY p.date
+                    """,
+                    (symbol,),
+                )
             rows = cur.fetchall()
         # solo lectura, no hace falta commit
 
@@ -516,7 +543,7 @@ def predict_simple(symbol: str) -> int:
     return int(sig)
 
 
-def predict_ensemble(symbol: str, force_retrain: bool = False) -> dict:
+def predict_ensemble(symbol: str, force_retrain: bool = False, as_of_date=None) -> dict:
     """
     Calcula señales con:
     - 3 reglas basadas en indicadores (solo como referencia)
@@ -527,13 +554,15 @@ def predict_ensemble(symbol: str, force_retrain: bool = False) -> dict:
     Args:
         symbol: Símbolo del activo
         force_retrain: Si True, fuerza reentrenamiento de todos los modelos
+        as_of_date: Si se especifica (date), solo usa datos hasta esa fecha.
+                   Para backfill histórico sin look-ahead bias.
     
     Devuelve:
         - rule_signals: señales de las 3 reglas (informativo)
         - ml_models: lista de resultados de los 7 modelos ML
         - signal_ensemble: señal final por votación (SOLO modelos ML)
     """
-    df = _load_features(symbol)
+    df = _load_features(symbol, as_of_date=as_of_date)
     if df.empty:
         return {
             "rule_signals": [],
@@ -550,7 +579,9 @@ def predict_ensemble(symbol: str, force_retrain: bool = False) -> dict:
     rule_signals = [s1, s2, s3]
 
     # Señales de modelos ML (estos SÍ votan)
-    ml_results = _predict_ml_models(df, symbol=symbol, force_retrain=force_retrain)
+    # Si as_of_date está presente, SIEMPRE forzar reentrenamiento (no usar modelos guardados)
+    force_retrain_internal = force_retrain or (as_of_date is not None)
+    ml_results = _predict_ml_models(df, symbol=symbol, force_retrain=force_retrain_internal)
     ml_signals = [r["signal_next_day"] for r in ml_results]
 
     # Votación por mayoría SOLO con modelos ML
@@ -567,8 +598,9 @@ def predict_ensemble(symbol: str, force_retrain: bool = False) -> dict:
         else:
             voted = 0  # Empate = neutral
 
+    mode = "BACKFILL" if as_of_date else "LIVE"
     logger.info(
-        f"Ensemble para {symbol} en {df.index[-1].date()}: "
+        f"[{mode}] Ensemble para {symbol} en {df.index[-1].date()}: "
         f"Reglas (info)={rule_signals}, ML signals (votan)={ml_signals}, Final={voted}"
     )
 

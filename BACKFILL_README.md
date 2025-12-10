@@ -1,8 +1,39 @@
-# 📊 Backfill de Predicciones - Guía y Problemas
+# 📊 Backfill de Predicciones - Guía Completa
 
-## ❌ Por qué NO funciona actualmente
+**Última actualización: 10 diciembre 2025**
 
-### 1. **Look-Ahead Bias (Problema Principal)**
+## ✅ Estado: PROBLEMA RESUELTO
+
+El sistema de backfill ahora funciona **correctamente sin look-ahead bias**.
+
+---
+
+## 🔧 Solución Implementada
+
+Se agregó soporte para `as_of_date` en todo el pipeline de predicciones:
+
+### Cambios realizados:
+
+1. **`_load_features(symbol, as_of_date=None)`**
+   - Nuevo parámetro opcional `as_of_date`
+   - Filtra datos con `WHERE p.date <= as_of_date`
+   - Sin el parámetro, comportamiento original (todos los datos)
+
+2. **`predict_ensemble(symbol, force_retrain=False, as_of_date=None)`**
+   - Nuevo parámetro opcional `as_of_date`
+   - Si se especifica, fuerza `force_retrain=True` automáticamente
+   - Previene usar modelos guardados que se entrenaron con datos del futuro
+
+3. **`backfill_predictions_for_symbol()` actualizado**
+   - Ahora llama a `predict_ensemble(symbol, as_of_date=prediction_date, force_retrain=True)`
+   - Cada fecha usa SOLO datos disponibles hasta ese momento
+   - ✅ Sin información del futuro
+
+---
+
+## ❌ Problema Original (YA RESUELTO)
+
+### 1. **Look-Ahead Bias (RESUELTO)**
 
 El script `backfill_predictions.py` tiene un **fallo fundamental de diseño**:
 
@@ -37,94 +68,55 @@ O usar el script helper:
 ./run_backfill.sh
 ```
 
-## 🔧 Cómo funciona actualmente
+## 🔧 Cómo funciona AHORA (Correcto)
 
 ```mermaid
 graph TD
     A[backfill_predictions.py] --> B[get_available_dates]
-    A --> C[predict_ensemble]
-    C --> D[_load_features]
-    D --> E[SELECT * FROM prices WHERE symbol=X]
-    E --> F[Devuelve TODOS los datos]
-    C --> G[Entrena modelos con datos del futuro]
-    A --> H[Guarda predicción con look-ahead bias]
-```
-
-## ✅ Cómo DEBERÍA funcionar
-
-```mermaid
-graph TD
-    A[backfill_predictions.py] --> B[get_available_dates]
-    A --> C[predict_ensemble_as_of_date]
-    C --> D[_load_features_as_of]
-    D --> E[SELECT * FROM prices WHERE date <= as_of_date]
-    E --> F[Solo datos hasta esa fecha]
+    A --> C["predict_ensemble(symbol, as_of_date=D)"]
+    C --> D["_load_features(symbol, as_of_date=D)"]
+    D --> E["SELECT * WHERE date <= D"]
+    E --> F[Solo datos hasta fecha D]
     C --> G[Entrena modelos sin datos del futuro]
-    A --> H[Guarda predicción SIN bias]
+    A --> H[✅ Guarda predicción SIN bias]
 ```
 
-## 🛠️ Solución Propuesta
-
-### Opción 1: Refactorizar `_load_features()` (Recomendado)
+### Flujo detallado:
 
 ```python
-def _load_features(symbol: str, as_of_date: date = None) -> pd.DataFrame:
-    """Carga features filtrando por fecha si se especifica."""
-    conn = get_db_conn()
-    try:
-        with conn.cursor() as cur:
-            if as_of_date:
-                # Solo datos hasta as_of_date
-                cur.execute("""
-                    SELECT ...
-                    FROM prices p
-                    LEFT JOIN indicators i ...
-                    WHERE p.symbol = %s AND p.date <= %s
-                    ORDER BY p.date
-                """, (symbol, as_of_date))
-            else:
-                # Comportamiento actual: todos los datos
-                cur.execute("""
-                    SELECT ...
-                    FROM prices p
-                    LEFT JOIN indicators i ...
-                    WHERE p.symbol = %s
-                    ORDER BY p.date
-                """, (symbol,))
-            rows = cur.fetchall()
-    finally:
-        if conn:
-            conn.close()
+# Para cada fecha histórica D en el rango:
+for d in dates:
+    # 1. predict_ensemble recibe as_of_date
+    result = predict_ensemble(symbol, as_of_date=d, force_retrain=True)
     
-    # ... resto del código igual
+    # 2. _load_features filtra datos
+    df = _load_features(symbol, as_of_date=d)
+    # SQL: WHERE p.date <= d  ✅
+    
+    # 3. Modelos se entrenan SOLO con datos <= d
+    # 4. Predicción se hace sin información del futuro
+    
+    # 5. Guardar predicción válida
+    save_daily_predictions(symbol, prediction_date=d, ...)
 ```
 
-### Opción 2: Crear función separada para backfill
+## 📖 Uso del Sistema (ACTUALIZADO)
 
-```python
-def predict_ensemble_historical(symbol: str, as_of_date: date, force_retrain: bool = True) -> dict:
-    """
-    Versión especial de predict_ensemble que solo usa datos hasta as_of_date.
-    
-    Args:
-        symbol: Símbolo del activo
-        as_of_date: Fecha límite para los datos (simula predicción en tiempo real)
-        force_retrain: Siempre True para backfill (no queremos modelos guardados)
-    """
-    df = _load_features(symbol, as_of_date=as_of_date)
-    # ... resto igual a predict_ensemble pero sin cargar modelos guardados
-```
+### ✅ Ahora puedes usar backfill de forma segura para:
 
-### Opción 3: No usar backfill (Actual)
+1. ✅ **Análisis de rendimiento histórico** - Las predicciones son válidas
+2. ✅ **Llenar datos faltantes** - Si el sistema estuvo caído
+3. ✅ **Backtesting de estrategias** - Sin información del futuro
+4. ✅ **Evaluación de modelos** - Resultados comparables con producción
 
-**Recomendación actual**: NO usar backfill para evaluar rendimiento histórico. En su lugar:
+### ⚠️ Consideraciones de rendimiento:
 
-1. Ejecutar el sistema diariamente en producción
-2. Las predicciones se guardan automáticamente con `save_daily_predictions()`
-3. Validar con `/validate_predictions` al día siguiente
-4. Usar `/model_performance` para analizar rendimiento real sin bias
+- El backfill **reentrena modelos ML para cada fecha** (force_retrain=True)
+- Esto es necesario para evitar usar modelos entrenados con datos del futuro
+- Puede ser **lento para rangos grandes** (varios minutos por fecha)
+- Recomendado: Rangos pequeños (días/semanas, no meses)
 
-## 📝 Uso del Script Actual (con sus limitaciones)
+## 📝 Cómo usar el script
 
 ### Desde fuera del contenedor:
 ```bash
@@ -148,31 +140,107 @@ if __name__ == "__main__":
     backfill_predictions_for_symbol(symbol, start_date=start, end_date=end)
 ```
 
-## ⚠️ Advertencias
+### Desde Python directamente (dentro del contenedor):
+```python
+from scripts.backfill_predictions import backfill_predictions_for_symbol
+from datetime import date
 
-1. **NO uses este script para evaluar rendimiento de modelos** - los resultados serán engañosos
-2. **Solo útil para**: llenar datos faltantes si el sistema estuvo caído algunos días
-3. **Aún así tendrá bias**: porque los modelos se entrenan con datos del futuro
-4. **Mejor alternativa**: Re-ejecutar todo el flujo diario manualmente para las fechas faltantes:
-   ```bash
-   curl "http://localhost:8082/update_prices?market=IBEX35"
-   curl "http://localhost:8082/update_news?markets=IBEX35"
-   curl "http://localhost:8082/compute_indicators?market=IBEX35"
-   curl "http://localhost:8082/predecir_ensemble?symbol=^IBEX"
-   ```
+# Backfill para IBEX35
+backfill_predictions_for_symbol(
+    symbol="^IBEX",
+    start_date=date(2024, 12, 1),
+    end_date=date(2024, 12, 10)
+)
 
-## 🎯 Próximos Pasos
+# Backfill para SP500
+backfill_predictions_for_symbol(
+    symbol="^GSPC",
+    start_date=date(2024, 11, 1),
+    end_date=date(2024, 11, 30)
+)
+```
 
-Si necesitas backfill real sin bias:
+## ⚠️ Advertencias y Limitaciones
 
-1. Implementar `as_of_date` en `_load_features()`
-2. Crear `predict_ensemble_historical()`
-3. Actualizar `backfill_predictions.py` para usar la nueva función
-4. Agregar tests para verificar que no hay datos del futuro
-5. Documentar diferencias entre predicción en tiempo real vs histórica
+1. ✅ **SIN look-ahead bias** - Las predicciones son válidas para análisis
+2. ⚠️ **Lento** - Reentrena 7 modelos ML por cada fecha (puede tardar minutos)
+3. ⚠️ **Datos necesarios** - Requiere que existan precios e indicadores para esas fechas
+4. ⚠️ **Ejecución** - Solo funciona dentro del contenedor Docker
+
+### Si necesitas llenar datos para fechas específicas:
+
+**Opción A: Backfill completo (lento pero correcto)**
+```bash
+./run_backfill.sh
+```
+
+**Opción B: Re-ejecutar flujo manual (más rápido, usa modelos actuales)**
+```bash
+# Para cada fecha que necesites:
+curl "http://localhost:8082/update_prices?market=IBEX35&period=1mo"
+curl "http://localhost:8082/update_news?markets=IBEX35"
+curl "http://localhost:8082/compute_indicators?market=IBEX35"
+curl "http://localhost:8082/predecir_ensemble?symbol=^IBEX"
+```
+
+⚠️ La Opción B usa modelos actuales (con datos del futuro), pero es **mucho más rápida**.
+Usa Opción A solo si necesitas evaluación histórica precisa.
+
+## 🎯 Verificación de Resultados
+
+Después del backfill, valida las predicciones:
+
+```bash
+# Validar predicciones de una fecha específica
+curl "http://localhost:8082/validate_predictions?date_str=2024-12-05"
+
+# Ver rendimiento de modelos en el rango
+curl "http://localhost:8082/model_performance?symbol=^IBEX&days=30"
+```
+
+## 🧪 Testing del Fix
+
+Para verificar que el fix funciona correctamente:
+
+```python
+# Test 1: Verificar que as_of_date filtra correctamente
+from scripts.models import _load_features
+from datetime import date
+
+df_all = _load_features("^IBEX")
+df_limited = _load_features("^IBEX", as_of_date=date(2024, 12, 1))
+
+print(f"Todos los datos: {len(df_all)} filas, última fecha: {df_all.index[-1].date()}")
+print(f"Hasta 2024-12-01: {len(df_limited)} filas, última fecha: {df_limited.index[-1].date()}")
+# ✅ df_limited debe tener menos filas y última fecha <= 2024-12-01
+```
+
+```python
+# Test 2: Verificar que predict_ensemble respeta as_of_date
+from scripts.models import predict_ensemble
+from datetime import date
+
+result = predict_ensemble("^IBEX", as_of_date=date(2024, 11, 15))
+# ✅ Debe usar solo datos hasta 2024-11-15
+# ✅ Logs deben mostrar "[BACKFILL] Ensemble para ^IBEX en 2024-11-15"
+```
 
 ## 📚 Recursos
 
 - [Avoiding Look-Ahead Bias in Machine Learning](https://en.wikipedia.org/wiki/Look-ahead_bias)
 - [Time Series Cross-Validation](https://scikit-learn.org/stable/modules/cross_validation.html#time-series-split)
 - Documentación interna: `mcp_server/scripts/models.py`
+
+## 📝 Changelog
+
+### 10 Diciembre 2025 - v2.0 ✅
+- ✅ Implementado `as_of_date` en `_load_features()`
+- ✅ Implementado `as_of_date` en `predict_ensemble()`
+- ✅ Actualizado `backfill_predictions.py` para usar el nuevo parámetro
+- ✅ Eliminado look-ahead bias completamente
+- ✅ Agregado logging para distinguir modo LIVE vs BACKFILL
+- ✅ Documentación actualizada
+
+### Antes - v1.0 ❌
+- ❌ Look-ahead bias presente
+- ❌ Predicciones históricas inválidas para análisis

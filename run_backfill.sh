@@ -3,11 +3,18 @@
 
 echo "🚀 Ejecutando backfill de predicciones..."
 echo ""
-echo "⚠️  ADVERTENCIA: Este proceso tiene look-ahead bias"
-echo "   Las predicciones históricas usan información del futuro"
+echo "✅ Sistema actualizado: SIN look-ahead bias"
+echo "   - Usa as_of_date para filtrar datos por fecha"
+echo "   - Reentrena modelos para cada fecha (puede ser lento)"
+echo "   - Predicciones válidas para análisis histórico"
+echo ""
+echo "Edita mcp_server/scripts/backfill_predictions.py para cambiar:"
+echo "  - Símbolo (^IBEX, ^GSPC, ^N225)"
+echo "  - Rango de fechas (start_date, end_date)"
 echo ""
 
 docker exec -it mcp_finance python -m scripts.backfill_predictions
 
 echo ""
 echo "✅ Backfill completado"
+echo "   Usa /validate_predictions y /model_performance para verificar"

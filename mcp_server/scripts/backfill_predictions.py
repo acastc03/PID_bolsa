@@ -2,25 +2,29 @@
 """
 Script de backfill de predicciones históricas.
 
-PROBLEMAS CONOCIDOS:
-1. ⚠️ LOOK-AHEAD BIAS: predict_ensemble() usa TODOS los datos hasta hoy,
-   no solo los datos disponibles hasta la fecha del backfill.
-   
-   Esto hace que las predicciones "históricas" tengan información del futuro,
-   invalidando cualquier análisis de rendimiento histórico.
+ÚLTIMA ACTUALIZACIÓN: 10 dic 2025
+✅ PROBLEMA RESUELTO: Ya NO tiene look-ahead bias.
 
+Características:
+1. ✅ Sin Look-Ahead Bias: predict_ensemble() ahora acepta 'as_of_date'
+   y _load_features() filtra datos para usar solo información hasta esa fecha.
+   
 2. ⚠️ EJECUCIÓN: Este script debe ejecutarse DENTRO del contenedor Docker:
    
    docker exec -it mcp_finance python -m scripts.backfill_predictions
    
+   O usar el script helper: ./run_backfill.sh
+   
    No funcionará si se ejecuta directamente desde tu máquina (DB_HOST=db no existe).
 
-SOLUCIÓN RECOMENDADA:
-- Modificar predict_ensemble() para aceptar un parámetro 'as_of_date'
-- Filtrar datos en _load_features() para usar solo datos <= as_of_date
-- Esto requiere refactorización significativa del sistema de modelos
+3. ⚠️ RENDIMIENTO: El backfill reentrena modelos ML para CADA fecha (force_retrain=True).
+   Esto es necesario para evitar usar modelos entrenados con datos del futuro.
+   Puede ser lento para rangos grandes.
 
-POR AHORA: Usar solo para pruebas, NO para análisis de rendimiento real.
+USO VÁLIDO:
+- Llenar datos faltantes si el sistema estuvo caído
+- Análisis de rendimiento histórico de modelos
+- Backtesting de estrategias
 """
 
 from datetime import date, timedelta
@@ -90,10 +94,9 @@ def backfill_predictions_for_symbol(symbol: str, start_date: date = None, end_da
         prediction_date = d
         run_date = d  # en backtest es irrelevante; puedes dejarlo igual
 
-        # TODO: idealmente, aquí querrías una versión de predict_ensemble
-        # que reciba 'as_of_date=prediction_date' y solo use datos hasta ese día.
-
-        result = predict_ensemble(symbol)
+        # Usar as_of_date para evitar look-ahead bias
+        # Solo usa datos disponibles hasta prediction_date
+        result = predict_ensemble(symbol, as_of_date=prediction_date, force_retrain=True)
 
         # Construir predictions_dict igual que en el endpoint /predecir_ensemble
         predictions_dict = {}
@@ -128,9 +131,11 @@ def backfill_predictions_for_symbol(symbol: str, start_date: date = None, end_da
                 run_date=run_date,
                 predictions=predictions_dict,
             )
-            print(f"[{prediction_date}] guardadas predicciones para {symbol}")
+            num_models = len([k for k in predictions_dict.keys() if k != "ensemble"])
+            ensemble_signal = predictions_dict.get("ensemble", {}).get("signal", 0)
+            print(f"✅ [{prediction_date}] {symbol}: {num_models} modelos, ensemble={ensemble_signal}")
         else:
-            print(f"[{prediction_date}] SIN predicciones para {symbol}")
+            print(f"⚠️  [{prediction_date}] SIN predicciones para {symbol}")
 
 
 if __name__ == "__main__":
@@ -147,10 +152,15 @@ if __name__ == "__main__":
     """
     # Ejemplo: backtest completo para ^IBEX
     symbol = "^IBEX"
-    start = date(2025, 11, 17)
-    end   = date(2025, 11, 21)
+    start = date(2024, 12, 1)
+    end   = date(2024, 12, 10)
     
-    print("⚠️  ADVERTENCIA: Este backfill tiene look-ahead bias!")
-    print("   Las predicciones usan información del futuro.\n")
+    print("🚀 Iniciando backfill SIN look-ahead bias")
+    print(f"   Símbolo: {symbol}")
+    print(f"   Rango: {start} a {end}")
+    print("   Nota: Esto reentrenará modelos para cada fecha (puede ser lento)\n")
     
     backfill_predictions_for_symbol(symbol, start_date=start, end_date=end)
+    
+    print("\n✅ Backfill completado")
+    print("   Usa /validate_predictions para verificar resultados")
