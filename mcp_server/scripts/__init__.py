@@ -19,11 +19,5 @@ logger = logging.getLogger("mcp_finance")
 
 # Símbolos por defecto para operaciones batch
 # Incluye principales índices de cada región
-DEFAULT_SYMBOLS = [
-    "^IBEX",   # España - IBEX 35
-    "^GSPC",   # USA - S&P 500
-    "^IXIC",   # USA - NASDAQ
-    "^N225",   # Japón - Nikkei 225
-    "^FTSE",   # UK - FTSE 100
-    "^GDAXI",  # Alemania - DAX
-]
+# Por defecto, procesaremos estos símbolos:
+DEFAULT_SYMBOLS = ["^IBEX", "^GSPC", "^N225"]

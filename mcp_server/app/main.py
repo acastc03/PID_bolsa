@@ -59,8 +59,8 @@ def list_markets():
     """
     Lista todos los mercados financieros soportados.
     
-    Devuelve información sobre los 30+ índices globales disponibles,
-    organizados por región geográfica.
+    Devuelve información sobre los 3 índices principales:
+    IBEX35 (España), SP500 (USA), NIKKEI (Japón).
     """
     from scripts.assets import SYMBOL_ALIASES, Market
     
@@ -68,30 +68,12 @@ def list_markets():
     markets_by_region = {
         "europe": [
             {"name": "IBEX35", "description": "IBEX 35 - España", "symbol": "^IBEX"},
-            {"name": "FTSE100", "description": "FTSE 100 - Reino Unido", "symbol": "^FTSE"},
-            {"name": "DAX", "description": "DAX 40 - Alemania", "symbol": "^GDAXI"},
-            {"name": "CAC40", "description": "CAC 40 - Francia", "symbol": "^FCHI"},
-            {"name": "FTSEMIB", "description": "FTSE MIB - Italia", "symbol": "FTSEMIB.MI"},
-            {"name": "EUROSTOXX50", "description": "Euro Stoxx 50 - Europa", "symbol": "^STOXX50E"},
         ],
         "americas": [
             {"name": "SP500", "description": "S&P 500 - USA", "symbol": "^GSPC"},
-            {"name": "DOW", "description": "Dow Jones - USA", "symbol": "^DJI"},
-            {"name": "NASDAQ", "description": "NASDAQ Composite - USA", "symbol": "^IXIC"},
-            {"name": "NASDAQ100", "description": "NASDAQ 100 - USA", "symbol": "^NDX"},
-            {"name": "RUSSELL2000", "description": "Russell 2000 - USA", "symbol": "^RUT"},
-            {"name": "VIX", "description": "Volatility Index - USA", "symbol": "^VIX"},
-            {"name": "BOVESPA", "description": "Ibovespa - Brasil", "symbol": "^BVSP"},
-            {"name": "IPC", "description": "IPC - México", "symbol": "^MXX"},
         ],
         "asia_pacific": [
             {"name": "NIKKEI", "description": "Nikkei 225 - Japón", "symbol": "^N225"},
-            {"name": "HANGSENG", "description": "Hang Seng - Hong Kong", "symbol": "^HSI"},
-            {"name": "SHANGHAI", "description": "Shanghai Composite - China", "symbol": "000001.SS"},
-            {"name": "SENSEX", "description": "BSE Sensex - India", "symbol": "^BSESN"},
-            {"name": "NIFTY50", "description": "Nifty 50 - India", "symbol": "^NSEI"},
-            {"name": "ASX200", "description": "ASX 200 - Australia", "symbol": "^AXJO"},
-            {"name": "KOSPI", "description": "KOSPI - Corea del Sur", "symbol": "^KS11"},
         ],
     }
     
@@ -111,10 +93,10 @@ def update_prices(market: Market = Market.ibex35, period: str = "1mo"):
     """
     Actualiza precios históricos para el índice seleccionado.
     
-    Soporta 30+ mercados globales:
-    - Europa: IBEX35, FTSE100, DAX, CAC40, FTSEMIB, EUROSTOXX50
-    - América: SP500, DOW, NASDAQ, NASDAQ100, RUSSELL2000, VIX, BOVESPA, IPC
-    - Asia-Pacífico: NIKKEI, HANGSENG, SHANGHAI, SENSEX, NIFTY50, ASX200, KOSPI
+    Mercados soportados:
+    - Europa: IBEX35 (España)
+    - América: SP500 (USA)
+    - Asia-Pacífico: NIKKEI (Japón)
     
     Period: 1d, 5d, 1mo, 3mo, 6mo, 1y, 2y, 5y, 10y, ytd, max
     """
@@ -135,7 +117,7 @@ def update_prices(market: Market = Market.ibex35, period: str = "1mo"):
 
 @app.get("/update_news")
 def update_news(
-    markets: str = "IBEX35,SP500",
+    markets: str = "IBEX35",
     when: str = "7d",
     days: int = 7,
     limit_rss: int = 10,
@@ -145,10 +127,8 @@ def update_news(
     Descarga noticias para una lista de índices separados por comas.
     
     Ejemplos de mercados:
-    - Europa: IBEX35,FTSE100,DAX,CAC40
-    - América: SP500,DOW,NASDAQ,BOVESPA
-    - Asia: NIKKEI,HANGSENG,SENSEX
-    - Global: IBEX35,SP500,NIKKEI,FTSE100,DAX
+    - Un mercado: IBEX35
+    - Varios: IBEX35,SP500,NIKKEI
     
     Las noticias se guardan en la tabla 'news'.
     """
@@ -187,7 +167,7 @@ def compute_indicators(market: Market = Market.ibex35):
     """
     Calcula indicadores técnicos (SMA, RSI, volatilidad) para un mercado.
     
-    Soporta 30+ mercados globales. Los indicadores se guardan en la tabla 'indicators'.
+    Mercados: IBEX35, SP500, NIKKEI. Los indicadores se guardan en la tabla 'indicators'.
     """
     try:
         symbol = resolve_symbol(market.value)
@@ -203,7 +183,7 @@ def compute_signals(market: Market = Market.ibex35):
     Genera señales de trading simples basadas en indicadores técnicos.
     
     Señales: +1 (COMPRA), 0 (NEUTRAL), -1 (VENTA)
-    Soporta 30+ mercados globales.
+    Mercados: IBEX35, SP500, NIKKEI.
     """
     try:
         symbol = resolve_symbol(market.value)
@@ -429,7 +409,7 @@ def daily_summary(market: Market = Market.ibex35, include_ml: bool = True):
     - Últimas noticias
     - Rendimiento de modelos ML (opcional)
     
-    Soporta 30+ mercados globales.
+    Mercados: IBEX35, SP500, NIKKEI.
     Ideal para reportes diarios automatizados.
     """
     try:

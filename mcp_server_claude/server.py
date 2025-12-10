@@ -47,15 +47,11 @@ except ImportError as e:
 # Inicializar servidor MCP
 server = Server("finance-predictor")
 
-# Lista de mercados soportados (30+ índices globales)
+# Lista de mercados soportados - sincronizado con Market enum
 SUPPORTED_MARKETS = [
-    # Europa
-    "IBEX35", "FTSE100", "DAX", "CAC40", "FTSEMIB", "EUROSTOXX50",
-    # América
-    "SP500", "DOW", "NASDAQ", "NASDAQ100", "RUSSELL2000", "VIX",
-    "BOVESPA", "IPC",
-    # Asia-Pacífico
-    "NIKKEI", "HANGSENG", "SHANGHAI", "SENSEX", "NIFTY50", "ASX200", "KOSPI"
+    "IBEX35",  # España - IBEX 35
+    "SP500",   # USA - S&P 500
+    "NIKKEI"   # Japón - Nikkei 225
 ]
 
 
