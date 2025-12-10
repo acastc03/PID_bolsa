@@ -6,12 +6,18 @@ from datetime import datetime
 from sklearn.linear_model import LinearRegression
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.svm import SVR
+from sklearn.model_selection import cross_val_score
 from xgboost import XGBRegressor
 from lightgbm import LGBMRegressor
 from catboost import CatBoostRegressor
 from prophet import Prophet
 from sklearn.metrics import mean_absolute_error, mean_squared_error
 from math import sqrt
+import optuna
+from skopt import BayesSearchCV
+from skopt.space import Real, Integer, Categorical
+import warnings
+warnings.filterwarnings('ignore', category=optuna.exceptions.ExperimentalWarning)
 
 from .config import get_db_conn
 from . import logger
@@ -109,6 +115,109 @@ def evaluate_model(y_true, y_pred):
 
 
 # ========================================================================
+# HYPERPARAMETER TUNING
+# ========================================================================
+
+# Espacios de búsqueda de hiperparámetros para cada modelo
+PARAM_SPACES = {
+    "RandomForest": {
+        "n_estimators": Integer(50, 300),
+        "max_depth": Integer(3, 15),
+        "min_samples_split": Integer(2, 10),
+        "min_samples_leaf": Integer(1, 5),
+        "max_features": Categorical(['sqrt', 'log2', None])
+    },
+    "XGBoost": {
+        "n_estimators": Integer(50, 300),
+        "max_depth": Integer(3, 10),
+        "learning_rate": Real(0.01, 0.3, prior='log-uniform'),
+        "subsample": Real(0.6, 1.0),
+        "colsample_bytree": Real(0.6, 1.0),
+        "gamma": Real(0, 5)
+    },
+    "SVR": {
+        "C": Real(0.1, 100, prior='log-uniform'),
+        "gamma": Real(0.001, 1, prior='log-uniform'),
+        "epsilon": Real(0.01, 1.0)
+    },
+    "LightGBM": {
+        "n_estimators": Integer(50, 300),
+        "max_depth": Integer(3, 15),
+        "learning_rate": Real(0.01, 0.3, prior='log-uniform'),
+        "num_leaves": Integer(10, 100),
+        "subsample": Real(0.6, 1.0),
+        "colsample_bytree": Real(0.6, 1.0)
+    },
+    "CatBoost": {
+        "iterations": Integer(50, 300),
+        "depth": Integer(3, 10),
+        "learning_rate": Real(0.01, 0.3, prior='log-uniform'),
+        "l2_leaf_reg": Real(1, 10)
+    }
+}
+
+
+def optimize_hyperparameters(model_class, param_space, X_train, y_train, model_name: str, n_iter: int = 20):
+    """
+    Optimiza hiperparámetros usando Bayesian Optimization con BayesSearchCV.
+    
+    Args:
+        model_class: Clase del modelo (ej: RandomForestRegressor)
+        param_space: Diccionario con el espacio de búsqueda
+        X_train: Features de entrenamiento
+        y_train: Target de entrenamiento
+        model_name: Nombre del modelo para logging
+        n_iter: Número de iteraciones de búsqueda
+    
+    Returns:
+        Mejores parámetros encontrados
+    """
+    logger.info(f"🔍 Optimizando hiperparámetros para {model_name}...")
+    
+    try:
+        # Configurar BayesSearchCV
+        opt = BayesSearchCV(
+            estimator=model_class(),
+            search_spaces=param_space,
+            n_iter=n_iter,
+            cv=3,  # 3-fold cross-validation
+            n_jobs=-1,
+            scoring='neg_mean_absolute_error',
+            random_state=42,
+            verbose=0
+        )
+        
+        # Ejecutar búsqueda
+        opt.fit(X_train, y_train)
+        
+        best_params = opt.best_params_
+        best_score = -opt.best_score_  # Negativo porque es neg_mean_absolute_error
+        
+        logger.info(f"✅ {model_name} - Mejor MAE en CV: {best_score:.2f}")
+        logger.info(f"📊 Mejores parámetros: {best_params}")
+        
+        return best_params
+        
+    except Exception as e:
+        logger.error(f"❌ Error optimizando {model_name}: {e}")
+        return None
+
+
+def load_best_params(symbol: str, model_name: str):
+    """
+    Carga los mejores parámetros guardados para un modelo y símbolo.
+    Si no existen, devuelve None.
+    """
+    try:
+        model_data = load_model(symbol, model_name)
+        if model_data and "best_params" in model_data.get("metadata", {}):
+            return model_data["metadata"]["best_params"]
+    except:
+        pass
+    return None
+
+
+# ========================================================================
 # REGLAS BASADAS EN INDICADORES
 # ========================================================================
 
@@ -179,16 +288,18 @@ def _rule_based_signal_contrarian(row: pd.Series) -> int:
 # MODELOS DE MACHINE LEARNING CON PERSISTENCIA
 # ========================================================================
 
-def _predict_ml_models(df: pd.DataFrame, symbol: str = "^IBEX", force_retrain: bool = False) -> list:
+def _predict_ml_models(df: pd.DataFrame, symbol: str = "^IBEX", force_retrain: bool = False, tune_hyperparams: bool = False) -> list:
     """
     Entrena y predice con 7 modelos de ML.
     - Si force_retrain=False, intenta cargar modelos guardados
     - Si no existen, entrena nuevos y los guarda automáticamente
+    - Si tune_hyperparams=True, optimiza hiperparámetros antes de entrenar
     
     Args:
         df: DataFrame con features
         symbol: Símbolo del activo
         force_retrain: Si True, fuerza reentrenamiento aunque existan modelos
+        tune_hyperparams: Si True, ejecuta hyperparameter tuning (Bayesian optimization)
     
     Returns:
         Lista de resultados de cada modelo
@@ -274,15 +385,37 @@ def _predict_ml_models(df: pd.DataFrame, symbol: str = "^IBEX", force_retrain: b
                     "MAE": model_data["metadata"].get("MAE", 0),
                     "RMSE": model_data["metadata"].get("RMSE", 0),
                     "from_cache": True,
-                    "training_date": model_data.get("training_date")
+                    "training_date": model_data.get("training_date"),
+                    "tuned": "best_params" in model_data.get("metadata", {})
                 })
         else:
             logger.info(f"🔄 Entrenando nuevo modelo: {model_name}")
-            rf = RandomForestRegressor(n_estimators=100, random_state=42).fit(X_train, y_train)
+            
+            # Optimizar hiperparámetros si está activado
+            if tune_hyperparams and model_name in PARAM_SPACES:
+                best_params = optimize_hyperparameters(
+                    RandomForestRegressor, 
+                    PARAM_SPACES[model_name],
+                    X_train, y_train, 
+                    model_name
+                )
+            else:
+                # Intentar cargar parámetros guardados o usar defaults
+                best_params = load_best_params(symbol, model_name)
+                if not best_params:
+                    best_params = {"n_estimators": 100, "random_state": 42}
+            
+            # Entrenar con mejores parámetros
+            rf = RandomForestRegressor(**best_params, random_state=42).fit(X_train, y_train)
             pred = rf.predict(X_test)[0]
             mae, rmse = evaluate_model(y_train, rf.predict(X_train))
             
-            metadata = {"MAE": float(mae), "RMSE": float(rmse), "n_samples": len(X_train)}
+            metadata = {
+                "MAE": float(mae), 
+                "RMSE": float(rmse), 
+                "n_samples": len(X_train),
+                "best_params": best_params
+            }
             save_model(rf, symbol, model_name, today, metadata)
             
             results.append({
@@ -361,16 +494,35 @@ def _predict_ml_models(df: pd.DataFrame, symbol: str = "^IBEX", force_retrain: b
                     "MAE": model_data["metadata"].get("MAE", 0),
                     "RMSE": model_data["metadata"].get("RMSE", 0),
                     "from_cache": True,
-                    "training_date": model_data.get("training_date")
+                    "training_date": model_data.get("training_date"),
+                    "tuned": "best_params" in model_data.get("metadata", {})
                 })
         else:
             logger.info(f"🔄 Entrenando nuevo modelo: {model_name}")
-            xgb = XGBRegressor(n_estimators=200, learning_rate=0.05, max_depth=4, random_state=42)
+            
+            if tune_hyperparams and model_name in PARAM_SPACES:
+                best_params = optimize_hyperparameters(
+                    XGBRegressor, 
+                    PARAM_SPACES[model_name],
+                    X_train, y_train, 
+                    model_name
+                )
+            else:
+                best_params = load_best_params(symbol, model_name)
+                if not best_params:
+                    best_params = {"n_estimators": 200, "learning_rate": 0.05, "max_depth": 4}
+            
+            xgb = XGBRegressor(**best_params, random_state=42)
             xgb.fit(X_train, y_train)
             pred = xgb.predict(X_test)[0]
             mae, rmse = evaluate_model(y_train, xgb.predict(X_train))
             
-            metadata = {"MAE": float(mae), "RMSE": float(rmse), "n_samples": len(X_train)}
+            metadata = {
+                "MAE": float(mae), 
+                "RMSE": float(rmse), 
+                "n_samples": len(X_train),
+                "best_params": best_params
+            }
             save_model(xgb, symbol, model_name, today, metadata)
             
             results.append({
@@ -402,16 +554,35 @@ def _predict_ml_models(df: pd.DataFrame, symbol: str = "^IBEX", force_retrain: b
                     "MAE": model_data["metadata"].get("MAE", 0),
                     "RMSE": model_data["metadata"].get("RMSE", 0),
                     "from_cache": True,
-                    "training_date": model_data.get("training_date")
+                    "training_date": model_data.get("training_date"),
+                    "tuned": "best_params" in model_data.get("metadata", {})
                 })
         else:
             logger.info(f"🔄 Entrenando nuevo modelo: {model_name}")
-            svr = SVR(kernel="rbf", C=100, gamma=0.1, epsilon=0.1)
+            
+            if tune_hyperparams and model_name in PARAM_SPACES:
+                best_params = optimize_hyperparameters(
+                    SVR, 
+                    PARAM_SPACES[model_name],
+                    X_train, y_train, 
+                    model_name
+                )
+            else:
+                best_params = load_best_params(symbol, model_name)
+                if not best_params:
+                    best_params = {"kernel": "rbf", "C": 100, "gamma": 0.1, "epsilon": 0.1}
+            
+            svr = SVR(**best_params)
             svr.fit(X_train, y_train)
             pred = svr.predict(X_test)[0]
             mae, rmse = evaluate_model(y_train, svr.predict(X_train))
             
-            metadata = {"MAE": float(mae), "RMSE": float(rmse), "n_samples": len(X_train)}
+            metadata = {
+                "MAE": float(mae), 
+                "RMSE": float(rmse), 
+                "n_samples": len(X_train),
+                "best_params": best_params
+            }
             save_model(svr, symbol, model_name, today, metadata)
             
             results.append({
@@ -443,23 +614,40 @@ def _predict_ml_models(df: pd.DataFrame, symbol: str = "^IBEX", force_retrain: b
                     "MAE": model_data["metadata"].get("MAE", 0),
                     "RMSE": model_data["metadata"].get("RMSE", 0),
                     "from_cache": True,
-                    "training_date": model_data.get("training_date")
+                    "training_date": model_data.get("training_date"),
+                    "tuned": "best_params" in model_data.get("metadata", {})
                 })
         else:
             logger.info(f"🔄 Entrenando nuevo modelo: {model_name}")
-            lgbm = LGBMRegressor(
-                n_estimators=300,
-                learning_rate=0.05,
-                max_depth=-1,
-                num_leaves=31,
-                random_state=42,
-                verbose=-1
-            )
+            
+            if tune_hyperparams and model_name in PARAM_SPACES:
+                best_params = optimize_hyperparameters(
+                    LGBMRegressor, 
+                    PARAM_SPACES[model_name],
+                    X_train, y_train, 
+                    model_name
+                )
+            else:
+                best_params = load_best_params(symbol, model_name)
+                if not best_params:
+                    best_params = {
+                        "n_estimators": 300,
+                        "learning_rate": 0.05,
+                        "max_depth": -1,
+                        "num_leaves": 31
+                    }
+            
+            lgbm = LGBMRegressor(**best_params, random_state=42, verbose=-1)
             lgbm.fit(X_train, y_train)
             pred = lgbm.predict(X_test)[0]
             mae, rmse = evaluate_model(y_train, lgbm.predict(X_train))
             
-            metadata = {"MAE": float(mae), "RMSE": float(rmse), "n_samples": len(X_train)}
+            metadata = {
+                "MAE": float(mae), 
+                "RMSE": float(rmse), 
+                "n_samples": len(X_train),
+                "best_params": best_params
+            }
             save_model(lgbm, symbol, model_name, today, metadata)
             
             results.append({
@@ -491,22 +679,39 @@ def _predict_ml_models(df: pd.DataFrame, symbol: str = "^IBEX", force_retrain: b
                     "MAE": model_data["metadata"].get("MAE", 0),
                     "RMSE": model_data["metadata"].get("RMSE", 0),
                     "from_cache": True,
-                    "training_date": model_data.get("training_date")
+                    "training_date": model_data.get("training_date"),
+                    "tuned": "best_params" in model_data.get("metadata", {})
                 })
         else:
             logger.info(f"🔄 Entrenando nuevo modelo: {model_name}")
-            cat = CatBoostRegressor(
-                iterations=300,
-                learning_rate=0.05,
-                depth=6,
-                silent=True,
-                random_state=42
-            )
+            
+            if tune_hyperparams and model_name in PARAM_SPACES:
+                best_params = optimize_hyperparameters(
+                    CatBoostRegressor, 
+                    PARAM_SPACES[model_name],
+                    X_train, y_train, 
+                    model_name
+                )
+            else:
+                best_params = load_best_params(symbol, model_name)
+                if not best_params:
+                    best_params = {
+                        "iterations": 300,
+                        "learning_rate": 0.05,
+                        "depth": 6
+                    }
+            
+            cat = CatBoostRegressor(**best_params, silent=True, random_state=42)
             cat.fit(X_train, y_train)
             pred = cat.predict(X_test)[0]
             mae, rmse = evaluate_model(y_train, cat.predict(X_train))
             
-            metadata = {"MAE": float(mae), "RMSE": float(rmse), "n_samples": len(X_train)}
+            metadata = {
+                "MAE": float(mae), 
+                "RMSE": float(rmse), 
+                "n_samples": len(X_train),
+                "best_params": best_params
+            }
             save_model(cat, symbol, model_name, today, metadata)
             
             results.append({
@@ -543,7 +748,7 @@ def predict_simple(symbol: str) -> int:
     return int(sig)
 
 
-def predict_ensemble(symbol: str, force_retrain: bool = False, as_of_date=None) -> dict:
+def predict_ensemble(symbol: str, force_retrain: bool = False, as_of_date=None, tune_hyperparams: bool = False) -> dict:
     """
     Calcula señales con:
     - 3 reglas basadas en indicadores (solo como referencia)
@@ -556,6 +761,7 @@ def predict_ensemble(symbol: str, force_retrain: bool = False, as_of_date=None) 
         force_retrain: Si True, fuerza reentrenamiento de todos los modelos
         as_of_date: Si se especifica (date), solo usa datos hasta esa fecha.
                    Para backfill histórico sin look-ahead bias.
+        tune_hyperparams: Si True, optimiza hiperparámetros con Bayesian optimization
     
     Devuelve:
         - rule_signals: señales de las 3 reglas (informativo)
@@ -581,7 +787,7 @@ def predict_ensemble(symbol: str, force_retrain: bool = False, as_of_date=None) 
     # Señales de modelos ML (estos SÍ votan)
     # Si as_of_date está presente, SIEMPRE forzar reentrenamiento (no usar modelos guardados)
     force_retrain_internal = force_retrain or (as_of_date is not None)
-    ml_results = _predict_ml_models(df, symbol=symbol, force_retrain=force_retrain_internal)
+    ml_results = _predict_ml_models(df, symbol=symbol, force_retrain=force_retrain_internal, tune_hyperparams=tune_hyperparams)
     ml_signals = [r["signal_next_day"] for r in ml_results]
 
     # Votación por mayoría SOLO con modelos ML

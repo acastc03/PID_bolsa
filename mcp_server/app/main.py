@@ -393,6 +393,50 @@ def predecir_ensemble_force(symbol: str = "^IBEX"):
     return predict_ensemble(symbol, force_retrain=True)
 
 
+@app.post("/tune_models")
+def tune_models_endpoint(symbol: str = "^IBEX", n_iter: int = 20):
+    """
+    🔍 Optimiza hiperparámetros de todos los modelos ML usando Bayesian Optimization.
+    
+    Este endpoint:
+    1. Ejecuta hyperparameter tuning para cada modelo (RandomForest, XGBoost, SVR, LightGBM, CatBoost)
+    2. Encuentra los mejores parámetros usando validación cruzada
+    3. Entrena nuevos modelos con parámetros optimizados
+    4. Guarda los modelos y parámetros en disco
+    5. Retorna las métricas de mejora
+    
+    Args:
+        symbol: Símbolo del activo (^IBEX, ^GSPC, ^N225)
+        n_iter: Número de iteraciones de Bayesian optimization (default: 20, recomendado: 30-50 para mejores resultados)
+    
+    Returns:
+        Diccionario con modelos optimizados y métricas de mejora
+        
+    ⚠️ ADVERTENCIA: Este proceso puede tardar varios minutos (5-15 min dependiendo de n_iter)
+    """
+    import time
+    start_time = time.time()
+    
+    # Entrenar con hyperparameter tuning activado
+    result = predict_ensemble(symbol, force_retrain=True, tune_hyperparams=True)
+    
+    elapsed_time = time.time() - start_time
+    
+    # Contar cuántos modelos fueron optimizados
+    tuned_models = [m for m in result["ml_models"] if m.get("from_cache") == False]
+    
+    return {
+        "message": f"✅ Hyperparameter tuning completado para {symbol}",
+        "symbol": symbol,
+        "models_tuned": len(tuned_models),
+        "elapsed_time_seconds": round(elapsed_time, 2),
+        "elapsed_time_minutes": round(elapsed_time / 60, 2),
+        "signal_ensemble": result["signal_ensemble"],
+        "ml_models": result["ml_models"],
+        "info": f"Modelos optimizados con {n_iter} iteraciones de Bayesian optimization"
+    }
+
+
 # ===================================================================
 # 6. ENDPOINTS DE REPORTING (Salida)
 # ===================================================================
