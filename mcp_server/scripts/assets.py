@@ -10,20 +10,73 @@ from enum import Enum
 # Mapa de alias "humanos" -> símbolo real de yfinance
 # Permite usar nombres como "IBEX35" en lugar de "^IBEX"
 SYMBOL_ALIASES = {
-    # Índice español
+    # === EUROPA ===
+    # España
     "IBEX35": "^IBEX",
     "IBEX": "^IBEX",
-    # S&P 500 (EE.UU.)
+    # Reino Unido
+    "FTSE100": "^FTSE",
+    "FTSE": "^FTSE",
+    # Alemania
+    "DAX": "^GDAXI",
+    "DAX40": "^GDAXI",
+    # Francia
+    "CAC40": "^FCHI",
+    "CAC": "^FCHI",
+    # Italia
+    "FTSEMIB": "FTSEMIB.MI",
+    "ITALY40": "FTSEMIB.MI",
+    # Europa general
+    "EUROSTOXX50": "^STOXX50E",
+    "STOXX50": "^STOXX50E",
+    
+    # === AMÉRICA ===
+    # EE.UU. - Principales
     "SP500": "^GSPC",
     "S&P500": "^GSPC",
     "SPX": "^GSPC",
-    # NASDAQ Composite y 100 (EE.UU.)
+    "DOW": "^DJI",
+    "DOWJONES": "^DJI",
+    "DJI": "^DJI",
     "NASDAQ": "^IXIC",
     "NASDAQ100": "^NDX",
     "NQ100": "^NDX",
-    # Nikkei 225 (Japón)
+    # EE.UU. - Otros
+    "RUSSELL2000": "^RUT",
+    "RUSSELL": "^RUT",
+    "VIX": "^VIX",  # Índice de volatilidad
+    # Brasil
+    "BOVESPA": "^BVSP",
+    "IBOVESPA": "^BVSP",
+    # México
+    "IPC": "^MXX",
+    "MEXICO": "^MXX",
+    
+    # === ASIA-PACÍFICO ===
+    # Japón
     "NIKKEI": "^N225",
     "NIKKEI225": "^N225",
+    # China
+    "SSE": "000001.SS",  # Shanghai Composite
+    "SHANGHAI": "000001.SS",
+    "HANGSENG": "^HSI",  # Hong Kong
+    "HSI": "^HSI",
+    # India
+    "SENSEX": "^BSESN",
+    "BSE": "^BSESN",
+    "NIFTY50": "^NSEI",
+    "NIFTY": "^NSEI",
+    # Australia
+    "ASX200": "^AXJO",
+    "ASX": "^AXJO",
+    # Corea del Sur
+    "KOSPI": "^KS11",
+    
+    # === SECTORES (EE.UU.) ===
+    "TECH": "^IXIC",  # Technology (NASDAQ)
+    "FINANCE": "^SP500-40",  # Financials
+    "ENERGY": "^GSPE",  # Energy
+    "HEALTHCARE": "^SP500-35",  # Healthcare
 }
 
 
@@ -33,10 +86,32 @@ class Market(str, Enum):
     Define los mercados disponibles para consultas en los endpoints de la API.
     Los valores corresponden a las claves del diccionario SYMBOL_ALIASES.
     """
-    ibex35 = "IBEX35"    # Índice bursátil español
-    sp500 = "SP500"      # S&P 500 estadounidense
-    nasdaq = "NASDAQ"    # NASDAQ Composite
-    nikkei = "NIKKEI"    # Nikkei 225 japonés
+    # Europa
+    ibex35 = "IBEX35"          # Índice bursátil español
+    ftse100 = "FTSE100"        # FTSE 100 Reino Unido
+    dax = "DAX"                # DAX 40 Alemania
+    cac40 = "CAC40"            # CAC 40 Francia
+    ftsemib = "FTSEMIB"        # FTSE MIB Italia
+    eurostoxx50 = "EUROSTOXX50"  # Euro Stoxx 50 Europa
+    
+    # América
+    sp500 = "SP500"            # S&P 500 estadounidense
+    dow = "DOW"                # Dow Jones Industrial
+    nasdaq = "NASDAQ"          # NASDAQ Composite
+    nasdaq100 = "NASDAQ100"    # NASDAQ 100
+    russell2000 = "RUSSELL2000"  # Russell 2000 small caps
+    vix = "VIX"                # Índice de volatilidad
+    bovespa = "BOVESPA"        # Ibovespa Brasil
+    ipc = "IPC"                # IPC México
+    
+    # Asia-Pacífico
+    nikkei = "NIKKEI"          # Nikkei 225 Japón
+    hangseng = "HANGSENG"      # Hang Seng Hong Kong
+    shanghai = "SHANGHAI"      # Shanghai Composite China
+    sensex = "SENSEX"          # BSE Sensex India
+    nifty50 = "NIFTY50"        # Nifty 50 India
+    asx200 = "ASX200"          # ASX 200 Australia
+    kospi = "KOSPI"            # KOSPI Corea del Sur
 
 
 def resolve_symbol(market_or_symbol: str) -> str:
