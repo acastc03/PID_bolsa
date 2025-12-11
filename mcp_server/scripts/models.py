@@ -406,7 +406,7 @@ def _predict_ml_models(df: pd.DataFrame, symbol: str = "^IBEX", force_retrain: b
                     best_params = {"n_estimators": 100, "random_state": 42}
             
             # Entrenar con mejores parámetros
-            rf = RandomForestRegressor(**best_params, random_state=42).fit(X_train, y_train)
+            rf = RandomForestRegressor(**best_params).fit(X_train, y_train)
             pred = rf.predict(X_test)[0]
             mae, rmse = evaluate_model(y_train, rf.predict(X_train))
             

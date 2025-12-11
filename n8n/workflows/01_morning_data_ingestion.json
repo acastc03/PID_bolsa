@@ -1,0 +1,200 @@
+{
+  "name": "🌅 Morning Data Ingestion - Multi Markets",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 9 * * 1-5"
+            }
+          ]
+        }
+      },
+      "name": "Schedule Morning 9:00 AM",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "position": [250, 300],
+      "typeVersion": 1,
+      "id": "schedule-morning"
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "http://mcp_finance:8000/health"
+      },
+      "name": "Check API Health",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [450, 300],
+      "typeVersion": 3,
+      "id": "health-check"
+    },
+    {
+      "parameters": {
+        "jsCode": "return [{\"json\": {\"market\": \"IBEX35\"}}, {\"json\": {\"market\": \"SP500\"}}, {\"json\": {\"market\": \"NIKKEI\"}}];"
+      },
+      "name": "Loop Markets",
+      "type": "n8n-nodes-base.code",
+      "position": [650, 300],
+      "typeVersion": 2,
+      "id": "loop-markets"
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ 'http://mcp_finance:8000/update_prices?market=' + $('Loop Markets').item.json.market + '&period=1mo' }}"
+      },
+      "name": "Update Prices",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [850, 300],
+      "typeVersion": 3,
+      "id": "update-prices"
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ 'http://mcp_finance:8000/update_news?market=' + $('Loop Markets').item.json.market }}"
+      },
+      "name": "Update News",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [1050, 300],
+      "typeVersion": 3,
+      "id": "update-news"
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ 'http://mcp_finance:8000/compute_indicators?market=' + $('Loop Markets').item.json.market }}"
+      },
+      "name": "Compute Indicators",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [1250, 300],
+      "typeVersion": 3,
+      "id": "compute-indicators"
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ 'http://mcp_finance:8000/predecir_ensemble?market=' + $('Loop Markets').item.json.market }}"
+      },
+      "name": "Generate Prediction",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [1450, 300],
+      "typeVersion": 3,
+      "id": "generate-prediction"
+    },
+    {
+      "parameters": {
+        "keepOnlySet": true,
+        "values": {
+          "string": [
+            {
+              "name": "market",
+              "value": "={{ $('Loop Markets').item.json.market }}"
+            },
+            {
+              "name": "status",
+              "value": "completed"
+            },
+            {
+              "name": "timestamp",
+              "value": "={{ new Date().toISOString() }}"
+            }
+          ]
+        }
+      },
+      "name": "Log Result",
+      "type": "n8n-nodes-base.set",
+      "position": [1650, 300],
+      "typeVersion": 2,
+      "id": "log-result"
+    }
+  ],
+  "connections": {
+    "Schedule Morning 9:00 AM": {
+      "main": [
+        [
+          {
+            "node": "Check API Health",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check API Health": {
+      "main": [
+        [
+          {
+            "node": "Loop Markets",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop Markets": {
+      "main": [
+        [
+          {
+            "node": "Update Prices",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Prices": {
+      "main": [
+        [
+          {
+            "node": "Update News",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update News": {
+      "main": [
+        [
+          {
+            "node": "Compute Indicators",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Compute Indicators": {
+      "main": [
+        [
+          {
+            "node": "Generate Prediction",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Prediction": {
+      "main": [
+        [
+          {
+            "node": "Log Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Result": {
+      "main": [
+        []
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

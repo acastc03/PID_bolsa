@@ -1,0 +1,164 @@
+{
+  "name": "🌙 Evening Validation & Retrain - Multi Markets",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 19 * * 1-5"
+            }
+          ]
+        }
+      },
+      "name": "Schedule Evening 7:00 PM",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "position": [250, 300],
+      "typeVersion": 1,
+      "id": "schedule-evening"
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "http://mcp_finance:8000/health"
+      },
+      "name": "Check API Health",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [450, 300],
+      "typeVersion": 3,
+      "id": "health-check"
+    },
+    {
+      "parameters": {
+        "jsCode": "return [{\"json\": {\"symbol\": \"^IBEX\", \"market\": \"IBEX35\"}}, {\"json\": {\"symbol\": \"^GSPC\", \"market\": \"SP500\"}}, {\"json\": {\"symbol\": \"^N225\", \"market\": \"NIKKEI\"}}];"
+      },
+      "name": "Loop Markets",
+      "type": "n8n-nodes-base.code",
+      "position": [650, 300],
+      "typeVersion": 2,
+      "id": "loop-markets"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ 'http://mcp_finance:8000/validate_and_retrain?symbol=' + $('Loop Markets').item.json.symbol }}"
+      },
+      "name": "Validate & Retrain",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [850, 300],
+      "typeVersion": 3,
+      "id": "validate-retrain"
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ 'http://mcp_finance:8000/model_performance?symbol=' + $('Loop Markets').item.json.symbol + '&days=7' }}"
+      },
+      "name": "Check Performance",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [1050, 300],
+      "typeVersion": 3,
+      "id": "check-performance"
+    },
+    {
+      "parameters": {
+        "keepOnlySet": true,
+        "values": {
+          "string": [
+            {
+              "name": "market",
+              "value": "={{ $('Loop Markets').item.json.market }}"
+            },
+            {
+              "name": "symbol",
+              "value": "={{ $('Loop Markets').item.json.symbol }}"
+            },
+            {
+              "name": "validation_status",
+              "value": "completed"
+            },
+            {
+              "name": "retrain_status",
+              "value": "completed"
+            },
+            {
+              "name": "timestamp",
+              "value": "={{ new Date().toISOString() }}"
+            }
+          ]
+        }
+      },
+      "name": "Log Result",
+      "type": "n8n-nodes-base.set",
+      "position": [1250, 300],
+      "typeVersion": 2,
+      "id": "log-result"
+    }
+  ],
+  "connections": {
+    "Schedule Evening 7:00 PM": {
+      "main": [
+        [
+          {
+            "node": "Check API Health",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check API Health": {
+      "main": [
+        [
+          {
+            "node": "Loop Markets",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop Markets": {
+      "main": [
+        [
+          {
+            "node": "Validate & Retrain",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate & Retrain": {
+      "main": [
+        [
+          {
+            "node": "Check Performance",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Performance": {
+      "main": [
+        [
+          {
+            "node": "Log Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Result": {
+      "main": [
+        []
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

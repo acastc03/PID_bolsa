@@ -456,6 +456,20 @@ def daily_summary(market: Market = Market.ibex35, include_ml: bool = True):
     Mercados: IBEX35, SP500, NIKKEI.
     Ideal para reportes diarios automatizados.
     """
+    import math
+    
+    def sanitize_floats(obj):
+        """Reemplaza NaN e Inf con None para que sea JSON-serializable"""
+        if isinstance(obj, dict):
+            return {k: sanitize_floats(v) for k, v in obj.items()}
+        elif isinstance(obj, list):
+            return [sanitize_floats(item) for item in obj]
+        elif isinstance(obj, float):
+            if math.isnan(obj) or math.isinf(obj):
+                return None
+            return obj
+        return obj
+    
     try:
         symbol = resolve_symbol(market.value)
     except ValueError as e:
@@ -464,6 +478,10 @@ def daily_summary(market: Market = Market.ibex35, include_ml: bool = True):
     summary = build_daily_summary(symbol, include_ml_performance=include_ml)
     # añadimos info del market original
     summary["market"] = market.value
+    
+    # Sanitizar valores NaN/Inf
+    summary = sanitize_floats(summary)
+    
     return summary
 
 
