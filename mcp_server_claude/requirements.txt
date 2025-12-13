@@ -21,3 +21,7 @@ xgboost>=3.1.0
 lightgbm>=4.6.0
 catboost>=1.2.8
 prophet>=1.2.1
+
+# Hyperparameter Optimization
+scikit-optimize>=0.10.0
+optuna>=4.1.0

@@ -25,7 +25,9 @@ RUN pip install --no-cache-dir \
     xgboost \
     lightgbm \
     catboost \
-    prophet
+    prophet \
+    scikit-optimize \
+    optuna
 
 # Copy application code
 COPY mcp_server/ /app/mcp_server/
