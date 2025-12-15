@@ -23,7 +23,8 @@ services:
       - N8N_BASIC_AUTH_PASSWORD=admin123
       - DB_TYPE=postgresdb
       - DB_POSTGRESDB_HOST=db
-      - DB_POSTGRESDB_DATABASE=${POSTGRES_DB}
+      # Use a dedicated DB for n8n to avoid accidental resets of app DB
+      - DB_POSTGRESDB_DATABASE=${N8N_DB_NAME:-n8n}
       - DB_POSTGRESDB_USER=${POSTGRES_USER}
       - DB_POSTGRESDB_PASSWORD=${POSTGRES_PASSWORD}
       - GENERIC_TIMEZONE=Europe/Madrid
@@ -33,6 +34,11 @@ services:
       - db
     volumes:
       - ./n8n:/home/node/.n8n
+      # Optional: mount workflows for manual/CLI import on start
+      - ./n8n/workflows:/workflows
+    # Optional helper to auto-import workflows if needed
+    # Uncomment the next two lines if you want auto-import at every start
+    # entrypoint: ["/bin/sh","-c","/home/node/.n8n/auto-import-and-start.sh"]
 
   mcp:
     build: ./mcp_server
