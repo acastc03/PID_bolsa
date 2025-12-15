@@ -581,7 +581,10 @@ def validate_and_retrain(
             detail=f"Error en validación: {validation_result.get('message')}"
         )
     
-    if not validation_result.get("symbols_with_price"):
+    # Si todas las predicciones ya están validadas, continuar con reentrenamiento
+    all_validated = validation_result.get("all_validated", False)
+    
+    if not validation_result.get("symbols_with_price") and not all_validated:
         raise HTTPException(
             status_code=404,
             detail="No hay precios para validar en esa fecha"
@@ -594,11 +597,14 @@ def validate_and_retrain(
         # 3) LIMPIAR MODELOS ANTIGUOS
         deleted = delete_old_models(symbol, keep_latest=7)
         
+        status_msg = "✅ Todas las predicciones ya estaban validadas" if all_validated else f"✅ Validadas {validation_result['rows_updated']} predicciones"
+        
         return {
             "validation": {
                 "target_date": validation_result["target_date"],
-                "symbols_validated": validation_result["symbols_with_price"],
+                "symbols_validated": validation_result.get("symbols_with_price", []),
                 "predictions_updated": validation_result["rows_updated"],
+                "all_validated": all_validated,
             },
             "retrain": {
                 "models_retrained": len(retrain_result["ml_models"]),
@@ -610,7 +616,7 @@ def validate_and_retrain(
             },
             "summary": {
                 "status": "success",
-                "message": f"✅ Validadas {validation_result['rows_updated']} predicciones y reentrenados {len(retrain_result['ml_models'])} modelos",
+                "message": f"{status_msg} y reentrenados {len(retrain_result['ml_models'])} modelos",
             }
         }
     

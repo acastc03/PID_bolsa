@@ -107,21 +107,47 @@ def validate_predictions_for_date(target_date: date):
 
 
 def validate_predictions_yesterday():
-    """Valida las predicciones del día anterior (ayer).
+    """Valida las predicciones del último día hábil con predicciones.
     
-    Atajo conveniente para validación automática diaria.
-    Típicamente se ejecuta cada mañana para validar las predicciones
-    del día anterior una vez que los precios reales están disponibles.
+    Busca hacia atrás desde ayer hasta encontrar un día que tenga
+    predicciones pendientes de validar. Esto maneja automáticamente
+    fines de semana y festivos.
     
     Returns:
-        dict: Resultado de validate_predictions_for_date para ayer
+        dict: Resultado de validate_predictions_for_date para el último día hábil
         
     Example:
-        En n8n, programar a las 9:00 AM:
+        Si hoy es lunes, validará el viernes (no sábado/domingo).
         POST /validate_predictions
-        
-        Esto validará las predicciones del día anterior automáticamente.
     """
     today = date.today()
-    target_date = today - timedelta(days=1)
-    return validate_predictions_for_date(target_date)
+    
+    # Buscar hacia atrás hasta 7 días para encontrar predicciones sin validar
+    for days_back in range(1, 8):
+        target_date = today - timedelta(days=days_back)
+        
+        # Verificar si hay predicciones sin validar para esa fecha
+        try:
+            conn = get_db_conn()
+            with conn.cursor() as cur:
+                cur.execute("""
+                    SELECT COUNT(*) FROM ml_predictions 
+                    WHERE prediction_date = %s AND true_value IS NULL
+                """, (target_date,))
+                row = cur.fetchone()
+                unvalidated_count = row[0] if row else 0
+            conn.close()
+            
+            if unvalidated_count > 0:
+                return validate_predictions_for_date(target_date)
+        except Exception:
+            continue
+    
+    # Si no hay predicciones sin validar, devolver mensaje informativo
+    return {
+        "target_date": (today - timedelta(days=1)).isoformat(),
+        "symbols_with_price": [],
+        "rows_updated": 0,
+        "message": "No hay predicciones pendientes de validar en los últimos 7 días",
+        "all_validated": True
+    }
