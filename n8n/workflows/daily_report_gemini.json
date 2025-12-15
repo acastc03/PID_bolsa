@@ -1,0 +1,192 @@
+{
+  "name": "📊 Daily Market Report with Gemini",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 7 * * 1-5"
+            }
+          ]
+        }
+      },
+      "id": "schedule-trigger",
+      "name": "⏰ Daily 7AM (Mon-Fri)",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [0, 0]
+    },
+    {
+      "parameters": {
+        "url": "http://mcp_finance:8000/daily_summary?market=IBEX35&include_ml=true",
+        "options": {}
+      },
+      "id": "http-ibex",
+      "name": "📈 Get IBEX35",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [220, -100]
+    },
+    {
+      "parameters": {
+        "url": "http://mcp_finance:8000/daily_summary?market=SP500&include_ml=true",
+        "options": {}
+      },
+      "id": "http-sp500",
+      "name": "📈 Get SP500",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [220, 0]
+    },
+    {
+      "parameters": {
+        "url": "http://mcp_finance:8000/daily_summary?market=NIKKEI&include_ml=true",
+        "options": {}
+      },
+      "id": "http-nikkei",
+      "name": "📈 Get NIKKEI",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [220, 100]
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "mergeByFields": {
+          "values": []
+        },
+        "combinationMode": "multiplex",
+        "options": {}
+      },
+      "id": "merge-data",
+      "name": "🔗 Merge All Data",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [440, 0]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Combinar los datos de los 3 mercados\nconst items = $input.all();\n\nconst marketData = {\n  ibex: items[0]?.json || {},\n  sp500: items[1]?.json || {},\n  nikkei: items[2]?.json || {}\n};\n\nconst today = new Date().toLocaleDateString('es-ES', {\n  weekday: 'long',\n  year: 'numeric',\n  month: 'long',\n  day: 'numeric'\n});\n\nreturn [{\n  json: {\n    date: today,\n    markets: marketData\n  }\n}];"
+      },
+      "id": "code-prepare",
+      "name": "📝 Prepare Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [660, 0]
+    },
+    {
+      "parameters": {
+        "modelId": {
+          "__rl": true,
+          "value": "models/gemini-2.0-flash",
+          "mode": "list",
+          "cachedResultName": "gemini-2.0-flash"
+        },
+        "prompt": {
+          "values": {
+            "systemMessage": "Eres un analista financiero experto. Tu tarea es generar un email HTML profesional y visualmente atractivo con un resumen de mercados financieros.\n\nREGLAS DE FORMATO:\n1. Usa HTML moderno con estilos inline\n2. Incluye emojis relevantes (📈📉💹🔔📊🎯💡🌍🇪🇸🇺🇸🇯🇵)\n3. Usa colores: verde (#10B981) para positivo, rojo (#EF4444) para negativo, azul (#3B82F6) para neutral\n4. Fondo del email: #F9FAFB, cards: blanco con sombra\n5. Fuentes: font-family: 'Segoe UI', Arial, sans-serif\n6. El email debe ser completo y extenso, con toda la información disponible\n\nESTRUCTURA DEL EMAIL:\n1. Header con título y fecha\n2. Resumen ejecutivo (2-3 párrafos)\n3. Sección para cada índice (IBEX 35, S&P 500, Nikkei 225) con:\n   - Precio apertura, cierre, cambio % (con flechas ↑↓)\n   - Indicadores técnicos (SMA, RSI, Volatilidad)\n   - Predicciones ML: mejor modelo, MAE, señales\n   - Análisis de los modelos y su rendimiento\n4. Sección de Noticias relevantes para cada mercado (título, enlace, resumen)\n5. Conclusiones y recomendaciones\n6. Footer profesional",
+            "content": "=Genera un email HTML completo y detallado con los siguientes datos de mercados:\n\nFecha: {{ $json.date }}\n\n--- IBEX 35 (España 🇪🇸) ---\nDatos: {{ JSON.stringify($json.markets.ibex, null, 2) }}\n\n--- S&P 500 (EEUU 🇺🇸) ---\nDatos: {{ JSON.stringify($json.markets.sp500, null, 2) }}\n\n--- Nikkei 225 (Japón 🇯🇵) ---\nDatos: {{ JSON.stringify($json.markets.nikkei, null, 2) }}\n\nGenera el HTML completo del email con todos los detalles, noticias con enlaces clickables, análisis de predicciones ML, y formato visualmente atractivo."
+          }
+        },
+        "options": {
+          "temperature": 0.7,
+          "maxOutputTokens": 8192
+        }
+      },
+      "id": "gemini-ai",
+      "name": "🤖 Gemini Generate Email",
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1,
+      "position": [880, 0],
+      "credentials": {
+        "googleGeminiApi": {
+          "id": "REPLACE_WITH_YOUR_CREDENTIAL_ID",
+          "name": "Google Gemini API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Extraer el HTML del response de Gemini\nconst response = $input.first().json;\n\nlet htmlContent = '';\n\n// El contenido puede venir en diferentes formatos\nif (response.text) {\n  htmlContent = response.text;\n} else if (response.output) {\n  htmlContent = response.output;\n} else if (response.content) {\n  htmlContent = response.content;\n} else {\n  htmlContent = JSON.stringify(response);\n}\n\n// Limpiar marcadores de código si existen\nhtmlContent = htmlContent.replace(/```html\\n?/gi, '').replace(/```\\n?/gi, '');\n\nreturn [{\n  json: {\n    emailHtml: htmlContent,\n    subject: `📊 Informe de Mercados - ${new Date().toLocaleDateString('es-ES')}`\n  }\n}];"
+      },
+      "id": "code-extract",
+      "name": "📧 Extract HTML",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1100, 0]
+    },
+    {
+      "parameters": {
+        "sendTo": "dailyresumepid@gmail.com",
+        "subject": "={{ $json.subject }}",
+        "emailType": "html",
+        "message": "={{ $json.emailHtml }}",
+        "options": {}
+      },
+      "id": "send-email",
+      "name": "📬 Send Email",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [1320, 0],
+      "credentials": {
+        "smtp": {
+          "id": "REPLACE_WITH_YOUR_SMTP_CREDENTIAL_ID",
+          "name": "Gmail SMTP"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "⏰ Daily 7AM (Mon-Fri)": {
+      "main": [
+        [
+          { "node": "📈 Get IBEX35", "type": "main", "index": 0 },
+          { "node": "📈 Get SP500", "type": "main", "index": 0 },
+          { "node": "📈 Get NIKKEI", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "📈 Get IBEX35": {
+      "main": [
+        [{ "node": "🔗 Merge All Data", "type": "main", "index": 0 }]
+      ]
+    },
+    "📈 Get SP500": {
+      "main": [
+        [{ "node": "🔗 Merge All Data", "type": "main", "index": 1 }]
+      ]
+    },
+    "📈 Get NIKKEI": {
+      "main": [
+        [{ "node": "🔗 Merge All Data", "type": "main", "index": 2 }]
+      ]
+    },
+    "🔗 Merge All Data": {
+      "main": [
+        [{ "node": "📝 Prepare Data", "type": "main", "index": 0 }]
+      ]
+    },
+    "📝 Prepare Data": {
+      "main": [
+        [{ "node": "🤖 Gemini Generate Email", "type": "main", "index": 0 }]
+      ]
+    },
+    "🤖 Gemini Generate Email": {
+      "main": [
+        [{ "node": "📧 Extract HTML", "type": "main", "index": 0 }]
+      ]
+    },
+    "📧 Extract HTML": {
+      "main": [
+        [{ "node": "📬 Send Email", "type": "main", "index": 0 }]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "tags": [],
+  "pinData": {}
+}
