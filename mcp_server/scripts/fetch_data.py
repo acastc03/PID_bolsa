@@ -8,9 +8,44 @@ y su almacenamiento en la base de datos PostgreSQL.
 import yfinance as yf
 import pandas as pd
 from psycopg2 import Error as PsycopgError
+import threading
+import time
+import os
+import fcntl
 
 from .config import get_db_conn
 from . import logger
+
+# Lock global para serializar descargas de yfinance (dentro del mismo proceso)
+_yf_download_lock = threading.Lock()
+
+# File lock para serializar entre procesos (cuando FastAPI usa múltiples workers)
+_LOCK_FILE = "/tmp/yfinance_download.lock"
+
+
+def _download_with_lock(symbol: str, period: str) -> pd.DataFrame:
+    """Descarga datos de yfinance con lock de archivo para evitar race conditions.
+    
+    Usa tanto threading.Lock (mismo proceso) como file lock (entre procesos)
+    para garantizar que solo una descarga de yfinance ocurra a la vez.
+    """
+    with _yf_download_lock:
+        # File lock para sincronizar entre procesos
+        lock_file = open(_LOCK_FILE, 'w')
+        try:
+            fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
+            logger.info(f"Lock adquirido para descargar {symbol}")
+            
+            # Pequeña pausa para evitar rate limiting de Yahoo Finance
+            time.sleep(0.5)
+            
+            df = yf.download(symbol, period=period, progress=False)
+            
+            logger.info(f"Descarga completada para {symbol}, filas: {len(df)}")
+            return df
+        finally:
+            fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+            lock_file.close()
 
 
 def _find_col(df: pd.DataFrame, target: str):
@@ -67,9 +102,17 @@ def update_prices_for_symbol(symbol: str, period: str = "1mo") -> int:
         - Usa ON CONFLICT para actualizar filas existentes
         - Maneja columnas MultiIndex automáticamente
         - Convierte NaN en volumen a 0
+        - Usa lock para evitar race conditions con yfinance en llamadas paralelas
     """
     logger.info(f"Descargando precios de {symbol} ({period})...")
-    df = yf.download(symbol, period=period)
+    
+    # Lock para evitar que yfinance mezcle datos cuando hay llamadas paralelas
+    with _yf_download_lock:
+        logger.info(f"Lock adquirido para {symbol}, iniciando descarga...")
+        # Pequeña pausa para evitar rate limiting
+        time.sleep(0.3)
+        df = yf.download(symbol, period=period, progress=False)
+        logger.info(f"Descarga finalizada para {symbol}, liberando lock...")
 
     # Aplanar columnas si vienen como MultiIndex (ocurre con múltiples símbolos)
     if isinstance(df.columns, pd.MultiIndex):
@@ -79,6 +122,15 @@ def update_prices_for_symbol(symbol: str, period: str = "1mo") -> int:
         ]
 
     logger.info(f"Columnas obtenidas de yfinance para {symbol}: {list(df.columns)}")
+
+    # VALIDACIÓN: Verificar que las columnas corresponden al símbolo correcto
+    col_str = " ".join(str(c) for c in df.columns)
+    # Si el símbolo solicitado NO está en las columnas pero hay otro símbolo, hay un bug
+    other_symbols = ['^GSPC', '^IBEX', '^N225']
+    for other in other_symbols:
+        if other != symbol and other in col_str and symbol not in col_str:
+            logger.error(f"⚠️ BUG DETECTADO: Pedimos {symbol} pero recibimos datos de {other}")
+            raise RuntimeError(f"yfinance devolvió datos incorrectos: pedido {symbol}, recibido {other}")
 
     # Verificar que se obtuvieron datos
     if df.empty:
