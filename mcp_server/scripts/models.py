@@ -3,6 +3,7 @@
 import numpy as np
 import pandas as pd
 from datetime import datetime
+import threading
 from sklearn.linear_model import LinearRegression
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.svm import SVR
@@ -23,6 +24,9 @@ from .config import get_db_conn
 from . import logger
 from .model_storage import save_model, load_model, model_exists
 from psycopg2 import Error as PsycopgError
+
+# Lock global para serializar predicciones (evita race conditions en llamadas paralelas)
+_prediction_lock = threading.Lock()
 
 
 def _load_features(symbol: str, as_of_date=None) -> pd.DataFrame:
@@ -768,54 +772,60 @@ def predict_ensemble(symbol: str, force_retrain: bool = False, as_of_date=None, 
         - ml_models: lista de resultados de los 7 modelos ML
         - signal_ensemble: señal final por votación (SOLO modelos ML)
     """
-    df = _load_features(symbol, as_of_date=as_of_date)
-    if df.empty:
-        return {
-            "rule_signals": [],
-            "ml_models": [],
-            "signal_ensemble": 0
-        }
-
-    last_row = df.iloc[-1]
-
-    # Señales basadas en reglas (solo informativas, NO votan)
-    s1 = _rule_based_signal(last_row)
-    s2 = _rule_based_signal_alt(last_row)
-    s3 = _rule_based_signal_contrarian(last_row)
-    rule_signals = [s1, s2, s3]
-
-    # Señales de modelos ML (estos SÍ votan)
-    # Si as_of_date está presente, SIEMPRE forzar reentrenamiento (no usar modelos guardados)
-    force_retrain_internal = force_retrain or (as_of_date is not None)
-    ml_results = _predict_ml_models(df, symbol=symbol, force_retrain=force_retrain_internal, tune_hyperparams=tune_hyperparams)
-    ml_signals = [r["signal_next_day"] for r in ml_results]
-
-    # Votación por mayoría SOLO con modelos ML
-    if len(ml_signals) == 0:
-        voted = 0
-    else:
-        count_buy = ml_signals.count(1)
-        count_sell = ml_signals.count(-1)
+    # Lock para evitar race conditions cuando se ejecutan múltiples predicciones en paralelo
+    with _prediction_lock:
+        logger.info(f"Lock adquirido para predict_ensemble de {symbol}")
         
-        if count_buy > count_sell:
-            voted = 1
-        elif count_sell > count_buy:
-            voted = -1
+        df = _load_features(symbol, as_of_date=as_of_date)
+        if df.empty:
+            return {
+                "symbol": symbol,
+                "rule_signals": [],
+                "ml_models": [],
+                "signal_ensemble": 0
+            }
+
+        last_row = df.iloc[-1]
+
+        # Señales basadas en reglas (solo informativas, NO votan)
+        s1 = _rule_based_signal(last_row)
+        s2 = _rule_based_signal_alt(last_row)
+        s3 = _rule_based_signal_contrarian(last_row)
+        rule_signals = [s1, s2, s3]
+
+        # Señales de modelos ML (estos SÍ votan)
+        # Si as_of_date está presente, SIEMPRE forzar reentrenamiento (no usar modelos guardados)
+        force_retrain_internal = force_retrain or (as_of_date is not None)
+        ml_results = _predict_ml_models(df, symbol=symbol, force_retrain=force_retrain_internal, tune_hyperparams=tune_hyperparams)
+        ml_signals = [r["signal_next_day"] for r in ml_results]
+
+        # Votación por mayoría SOLO con modelos ML
+        if len(ml_signals) == 0:
+            voted = 0
         else:
-            voted = 0  # Empate = neutral
+            count_buy = ml_signals.count(1)
+            count_sell = ml_signals.count(-1)
+            
+            if count_buy > count_sell:
+                voted = 1
+            elif count_sell > count_buy:
+                voted = -1
+            else:
+                voted = 0  # Empate = neutral
 
-    mode = "BACKFILL" if as_of_date else "LIVE"
-    logger.info(
-        f"[{mode}] Ensemble para {symbol} en {df.index[-1].date()}: "
-        f"Reglas (info)={rule_signals}, ML signals (votan)={ml_signals}, Final={voted}"
-    )
+        mode = "BACKFILL" if as_of_date else "LIVE"
+        logger.info(
+            f"[{mode}] Ensemble para {symbol} en {df.index[-1].date()}: "
+            f"Reglas (info)={rule_signals}, ML signals (votan)={ml_signals}, Final={voted}"
+        )
 
-    return {
-        "rule_signals": rule_signals,  # Solo informativo
-        "ml_models": ml_results,
-        "signal_ensemble": int(voted),  # Solo basado en ML
-        "ml_signals": ml_signals  # Para transparencia
-    }
+        return {
+            "symbol": symbol,
+            "rule_signals": rule_signals,  # Solo informativo
+            "ml_models": ml_results,
+            "signal_ensemble": int(voted),  # Solo basado en ML
+            "ml_signals": ml_signals  # Para transparencia
+        }
 
 
 def compute_signals_for_symbol(symbol: str) -> dict:

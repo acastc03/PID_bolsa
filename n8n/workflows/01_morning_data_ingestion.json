@@ -1,5 +1,5 @@
 {
-  "name": "🌅 Morning Data Ingestion - Multi Markets",
+  "name": "🌅 Data Ingestion - Sequential",
   "nodes": [
     {
       "parameters": {
@@ -7,16 +7,16 @@
           "interval": [
             {
               "field": "cronExpression",
-              "expression": "0 9 * * 1-5"
+              "expression": "30 23 * * 1-5"
             }
           ]
         }
       },
-      "name": "Schedule Morning 9:00 AM",
+      "name": "Schedule 23:30",
       "type": "n8n-nodes-base.scheduleTrigger",
       "position": [250, 300],
       "typeVersion": 1,
-      "id": "schedule-morning"
+      "id": "schedule-trigger"
     },
     {
       "parameters": {
@@ -33,38 +33,38 @@
       "parameters": {
         "jsCode": "return [{\"json\": {\"market\": \"IBEX35\"}}, {\"json\": {\"market\": \"SP500\"}}, {\"json\": {\"market\": \"NIKKEI\"}}];"
       },
-      "name": "Loop Markets",
+      "name": "Markets List",
       "type": "n8n-nodes-base.code",
       "position": [650, 300],
       "typeVersion": 2,
-      "id": "loop-markets"
+      "id": "markets-list"
+    },
+    {
+      "parameters": {
+        "batchSize": 1,
+        "options": {}
+      },
+      "name": "Process One By One",
+      "type": "n8n-nodes-base.splitInBatches",
+      "position": [850, 300],
+      "typeVersion": 3,
+      "id": "split-batches"
     },
     {
       "parameters": {
         "method": "GET",
-        "url": "={{ 'http://mcp_finance:8000/update_prices?market=' + $('Loop Markets').item.json.market + '&period=1mo' }}"
+        "url": "={{ 'http://mcp_finance:8000/update_prices?market=' + $json.market + '&period=5d' }}"
       },
       "name": "Update Prices",
       "type": "n8n-nodes-base.httpRequest",
-      "position": [850, 300],
+      "position": [1050, 300],
       "typeVersion": 3,
       "id": "update-prices"
     },
     {
       "parameters": {
         "method": "GET",
-        "url": "={{ 'http://mcp_finance:8000/update_news?market=' + $('Loop Markets').item.json.market }}"
-      },
-      "name": "Update News",
-      "type": "n8n-nodes-base.httpRequest",
-      "position": [1050, 300],
-      "typeVersion": 3,
-      "id": "update-news"
-    },
-    {
-      "parameters": {
-        "method": "GET",
-        "url": "={{ 'http://mcp_finance:8000/compute_indicators?market=' + $('Loop Markets').item.json.market }}"
+        "url": "={{ 'http://mcp_finance:8000/compute_indicators?market=' + $('Process One By One').item.json.market }}"
       },
       "name": "Compute Indicators",
       "type": "n8n-nodes-base.httpRequest",
@@ -75,43 +75,17 @@
     {
       "parameters": {
         "method": "GET",
-        "url": "={{ 'http://mcp_finance:8000/predecir_ensemble?market=' + $('Loop Markets').item.json.market }}"
+        "url": "={{ 'http://mcp_finance:8000/predecir_ensemble?market=' + $('Process One By One').item.json.market }}"
       },
       "name": "Generate Prediction",
       "type": "n8n-nodes-base.httpRequest",
       "position": [1450, 300],
       "typeVersion": 3,
       "id": "generate-prediction"
-    },
-    {
-      "parameters": {
-        "keepOnlySet": true,
-        "values": {
-          "string": [
-            {
-              "name": "market",
-              "value": "={{ $('Loop Markets').item.json.market }}"
-            },
-            {
-              "name": "status",
-              "value": "completed"
-            },
-            {
-              "name": "timestamp",
-              "value": "={{ new Date().toISOString() }}"
-            }
-          ]
-        }
-      },
-      "name": "Log Result",
-      "type": "n8n-nodes-base.set",
-      "position": [1650, 300],
-      "typeVersion": 2,
-      "id": "log-result"
     }
   ],
   "connections": {
-    "Schedule Morning 9:00 AM": {
+    "Schedule 23:30": {
       "main": [
         [
           {
@@ -126,14 +100,25 @@
       "main": [
         [
           {
-            "node": "Loop Markets",
+            "node": "Markets List",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Loop Markets": {
+    "Markets List": {
+      "main": [
+        [
+          {
+            "node": "Process One By One",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process One By One": {
       "main": [
         [
           {
@@ -141,21 +126,11 @@
             "type": "main",
             "index": 0
           }
-        ]
+        ],
+        []
       ]
     },
     "Update Prices": {
-      "main": [
-        [
-          {
-            "node": "Update News",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Update News": {
       "main": [
         [
           {
@@ -181,16 +156,11 @@
       "main": [
         [
           {
-            "node": "Log Result",
+            "node": "Process One By One",
             "type": "main",
             "index": 0
           }
         ]
-      ]
-    },
-    "Log Result": {
-      "main": [
-        []
       ]
     }
   },

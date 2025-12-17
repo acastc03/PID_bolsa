@@ -212,7 +212,7 @@ def predecir_simple(symbol: str = "^IBEX"):
 
 
 @app.get("/predecir_ensemble")
-def predecir_ensemble_endpoint(symbol: str = "^IBEX"):
+def predecir_ensemble_endpoint(market: Market = Market.ibex35, symbol: str = None):
     """
     Devuelve las señales individuales de cada modelo ML y la señal final
     por votación (ensemble).
@@ -220,8 +220,14 @@ def predecir_ensemble_endpoint(symbol: str = "^IBEX"):
     Además, guarda las predicciones de cada modelo en la tabla ml_predictions
     para llevar un histórico diario.
     """
-    # 1) Obtener resultados del ensemble (tal como ya hacías)
-    result = predict_ensemble(symbol)
+    # Resolver símbolo desde market o usar symbol directamente
+    if symbol:
+        resolved_symbol = symbol
+    else:
+        resolved_symbol = resolve_symbol(market.value)
+    
+    # 1) Obtener resultados del ensemble
+    result = predict_ensemble(resolved_symbol)
 
     # 2) Construir el diccionario de predicciones por modelo.
     #    Aquí asumimos que `result["ml_models"]` es algo tipo:
@@ -273,7 +279,7 @@ def predecir_ensemble_endpoint(symbol: str = "^IBEX"):
     # 5) Guardar en la BD (solo si hay algo que guardar)
     if predictions_dict:
         save_daily_predictions(
-            symbol=symbol,
+            symbol=resolved_symbol,
             prediction_date=prediction_date,
             run_date=run_date,
             predictions=predictions_dict,
@@ -281,7 +287,7 @@ def predecir_ensemble_endpoint(symbol: str = "^IBEX"):
 
     # 6) Devolver la respuesta original
     return {
-        "symbol": symbol,
+        "symbol": resolved_symbol,
         **result,
     }
 
